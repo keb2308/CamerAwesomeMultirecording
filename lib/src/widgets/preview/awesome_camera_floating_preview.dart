@@ -38,6 +38,8 @@ class _AwesomeCameraFloatingPreviewState
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width / 3;
+
     return Positioned(
       left: _position.dx,
       top: _position.dy,
@@ -63,9 +65,9 @@ class _AwesomeCameraFloatingPreviewState
                   width: 1000,
                   height: 1000 / widget.aspectRatio,
                 ), // FIXME  we don't know preview size of other sensors
-                constraints: const BoxConstraints(
-                  maxWidth: 300,
-                  maxHeight: 300,
+                constraints: BoxConstraints(
+                  maxWidth: width,
+                  maxHeight: width / widget.aspectRatio,
                 ),
                 sensor: widget.sensor,
                 child: widget.texture,
