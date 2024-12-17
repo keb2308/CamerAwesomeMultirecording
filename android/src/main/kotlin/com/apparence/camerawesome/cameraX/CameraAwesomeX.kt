@@ -145,7 +145,8 @@ class CameraAwesomeX : CameraInterface, FlutterPlugin, ActivityAware {
         val cameraProvider = getCameraProvider()
 
         val mode = CaptureModes.valueOf(captureMode)
-        cameraState = CameraXState(cameraProvider = cameraProvider,
+        cameraState = CameraXState(
+            cameraProvider = cameraProvider,
             textureEntries = sensors.mapIndexed { index: Int, pigeonSensor: PigeonSensor ->
                 (pigeonSensor.deviceId
                     ?: index.toString()) to textureRegistry!!.createSurfaceTexture()

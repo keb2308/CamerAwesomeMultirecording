@@ -22,6 +22,8 @@ class PictureInPictureConfig {
   final Sensor sensor;
   final PictureInPictureBuilder pictureInPictureBuilder;
   final VoidCallback? onTap;
+  final double? width;
+  final double? height;
 
   PictureInPictureConfig({
     this.startingPosition = const Offset(20, 20),
@@ -29,6 +31,8 @@ class PictureInPictureConfig {
     required this.sensor,
     PictureInPictureBuilder? pictureInPictureBuilder,
     this.onTap,
+    this.width,
+    this.height,
   }) : pictureInPictureBuilder = pictureInPictureBuilder ??
             ((preview, aspectRatio) {
               return Container(
