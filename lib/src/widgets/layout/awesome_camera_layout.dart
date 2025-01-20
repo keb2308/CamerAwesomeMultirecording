@@ -2,6 +2,7 @@
 
 import 'dart:io';
 
+import 'package:camerawesome/camerawesome_plugin.dart';
 import 'package:camerawesome/src/orchestrator/models/capture_modes.dart';
 import 'package:camerawesome/src/orchestrator/states/states.dart';
 import 'package:camerawesome/src/widgets/awesome_camera_mode_selector.dart';
@@ -34,7 +35,9 @@ class AwesomeCameraLayout extends StatelessWidget {
                 if (state is PhotoCameraState && state.hasFilters)
                   AwesomeFilterWidget(state: state)
                 else if (!kIsWeb && Platform.isAndroid)
-                  AwesomeZoomSelector(state: state),
+                  AwesomeZoomSelector(state: state)
+                else if (!kIsWeb && Platform.isIOS)
+                  AwesomeSensorTypeSelector(state: state),
                 AwesomeCameraModeSelector(state: state),
               ],
             )),

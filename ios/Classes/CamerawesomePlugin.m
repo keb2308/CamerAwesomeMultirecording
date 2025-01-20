@@ -100,7 +100,9 @@ FlutterEventSink physicalButtonEventSink;
     }
     
     self.multiCamera = [[MultiCameraPreview alloc] initWithSensors:sensors
+                                                      videoOptions:videoOptions != nil ? videoOptions.ios : nil
                                                  mirrorFrontCamera:[mirrorFrontCamera boolValue]
+                        
                                               enablePhysicalButton:[enablePhysicalButton boolValue]
                                                    aspectRatioMode:aspectRatioMode
                                                        captureMode:captureModeType
@@ -336,36 +338,39 @@ FlutterEventSink physicalButtonEventSink;
     return;
   }
   
-  if (self.camera == nil) {
-    *error = [FlutterError errorWithCode:@"MULTI_CAMERA_UNSUPPORTED" message:@"this feature is currently not supported with multi camera feature" details:nil];
-    return;
+  if (self.multiCamera != nil) {
+      [self.multiCamera pauseVideoRecording];
+  } else {
+      [self.camera pauseVideoRecording];
   }
   
-  [self.camera pauseVideoRecording];
+  
 }
 
 - (void)recordVideoSensors:(nonnull NSArray<PigeonSensor *> *)sensors paths:(nonnull NSArray<NSString *> *)paths completion:(nonnull void (^)(FlutterError * _Nullable))completion {
-  if (self.camera == nil && self.multiCamera == nil) {
-    completion([FlutterError errorWithCode:@"CAMERA_MUST_BE_INIT" message:@"init must be call before start" details:nil]);
-    return;
-  }
+    if (self.camera == nil && self.multiCamera == nil) {
+        completion([FlutterError errorWithCode:@"CAMERA_MUST_BE_INIT" message:@"init must be call before start" details:nil]);
+        return;
+    }
+    
+    
+    if (sensors == nil || [sensors count] <= 0 || paths == nil || [paths count] <= 0) {
+        completion([FlutterError errorWithCode:@"PATH_NOT_SET" message:@"at least one path must be set" details:nil]);
+        return;
+    }
+    
+    if ([sensors count] != [paths count]) {
+        completion([FlutterError errorWithCode:@"PATH_INVALID" message:@"sensors & paths list seems to be different" details:nil]);
+        return;
+    }
+    if (self.multiCamera) {
+        [self.multiCamera startRecordingToPaths:paths completion:completion];
+    } else {
+        [self.camera recordVideoAtPath:[paths firstObject] completion:completion];
+    }
+
+        
   
-  if (self.camera == nil) {
-    completion([FlutterError errorWithCode:@"MULTI_CAMERA_UNSUPPORTED" message:@"this feature is currently not supported with multi camera feature" details:nil]);
-    return;
-  }
-  
-  if (sensors == nil || [sensors count] <= 0 || paths == nil || [paths count] <= 0) {
-    completion([FlutterError errorWithCode:@"PATH_NOT_SET" message:@"at least one path must be set" details:nil]);
-    return;
-  }
-  
-  if ([sensors count] != [paths count]) {
-    completion([FlutterError errorWithCode:@"PATH_INVALID" message:@"sensors & paths list seems to be different" details:nil]);
-    return;
-  }
-  
-  [self.camera recordVideoAtPath:[paths firstObject] completion:completion];
 }
 
 - (void)resumeVideoRecordingWithError:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
@@ -374,12 +379,13 @@ FlutterEventSink physicalButtonEventSink;
     return;
   }
   
-  if (self.camera == nil) {
-    *error = [FlutterError errorWithCode:@"MULTI_CAMERA_UNSUPPORTED" message:@"this feature is currently not supported with multi camera feature" details:nil];
-    return;
-  }
+    if (self.multiCamera != nil) {
+        [self.multiCamera resumeVideoRecording];
+    } else {
+        [self.camera resumeVideoRecording];
+    }
   
-  [self.camera resumeVideoRecording];
+  
 }
 
 - (void)setRecordingAudioModeEnableAudio:(NSNumber *)enableAudio completion:(void(^)(NSNumber *_Nullable, FlutterError *_Nullable))completion {
@@ -388,12 +394,13 @@ FlutterEventSink physicalButtonEventSink;
     return;
   }
   
-  if (self.camera == nil) {
-    completion(nil, [FlutterError errorWithCode:@"MULTI_CAMERA_UNSUPPORTED" message:@"this feature is currently not supported with multi camera feature" details:nil]);
-    return;
-  }
+    if (self.multiCamera != nil) {
+        [self.multiCamera setRecordingAudioMode:[enableAudio boolValue] completion:completion];
+    } else {
+        [self.camera setRecordingAudioMode:[enableAudio boolValue] completion:completion];
+    }
   
-  [self.camera setRecordingAudioMode:[enableAudio boolValue] completion:completion];
+  
 }
 
 - (void)stopRecordingVideoWithCompletion:(nonnull void (^)(NSNumber * _Nullable, FlutterError * _Nullable))completion {
@@ -402,14 +409,15 @@ FlutterEventSink physicalButtonEventSink;
     return;
   }
   
-  if (self.camera == nil) {
-    completion(nil, [FlutterError errorWithCode:@"MULTI_CAMERA_UNSUPPORTED" message:@"this feature is currently not supported with multi camera feature" details:nil]);
-    return;
-  }
-  
-  dispatch_async(_dispatchQueue, ^{
-    [self->_camera stopRecordingVideo:completion];
-  });
+    if (self.multiCamera) {
+        dispatch_async(_dispatchQueue, ^{
+            [self->_multiCamera stopRecordingVideo:completion];
+        });
+    } else {
+        dispatch_async(_dispatchQueue, ^{
+          [self->_camera stopRecordingVideo:completion];
+        });
+    }
 }
 
 #pragma mark - General methods
@@ -461,12 +469,7 @@ FlutterEventSink physicalButtonEventSink;
   
   CaptureModes captureMode = [CaptureModeUtils captureModeFromCaptureModeType:mode];
   if (self.multiCamera != nil) {
-    if (captureMode == Video) {
-      *error = [FlutterError errorWithCode:@"MULTI_CAMERA_UNSUPPORTED" message:@"impossible to set video mode when multi camera" details:nil];
-      return;
-    }
-    
-    [self.camera setCaptureMode:captureMode error:error];
+      [self.multiCamera setCaptureMode:captureMode error:error];
   } else {
     [self.camera setCaptureMode:captureMode error:error];
   }

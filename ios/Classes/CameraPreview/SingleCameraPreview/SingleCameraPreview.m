@@ -470,7 +470,10 @@
   }
   
   if (!_videoController.isRecording) {
-    [_videoController recordVideoAtPath:path captureDevice:_captureDevice orientation:_deviceOrientation audioSetupCallback:^{
+    [_videoController recordVideoAtPaths:@[path]
+                          captureDevices:@[_captureDevice]
+                             orientation: _deviceOrientation
+                      audioSetupCallback:^{
       [self setUpCaptureSessionForAudioError:^(NSError *error) {
         completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"error when trying to setup audio" details:[error localizedDescription]]);
       }];
@@ -481,7 +484,9 @@
       [self->_captureVideoOutput setSampleBufferDelegate:self queue:self->_dispatchQueue];
       
       completion(nil);
-    } options:_videoOptions quality: _recordingQuality completion:completion];
+    }
+                                 options:_videoOptions
+                                 quality: _recordingQuality completion:completion];
   } else {
     completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"already recording video" details:@""]);
   }
@@ -584,7 +589,7 @@
   
   // Process video recording
   if (_videoController.isRecording) {
-    [_videoController captureOutput:output didOutputSampleBuffer:sampleBuffer fromConnection:connection captureVideoOutput:_captureVideoOutput];
+      [_videoController captureOutput:output didOutputSampleBuffer:sampleBuffer fromConnection:connection captureVideoOutput:_captureVideoOutput index:0];
   }
 }
 

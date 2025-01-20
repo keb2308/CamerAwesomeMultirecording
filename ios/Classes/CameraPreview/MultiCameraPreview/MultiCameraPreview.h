@@ -20,6 +20,7 @@
 #import "CameraFlash.h"
 #import "CaptureModes.h"
 #import "SensorUtils.h"
+#import "VideoController.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -27,7 +28,7 @@ NS_ASSUME_NONNULL_BEGIN
 AVCaptureAudioDataOutputSampleBufferDelegate>
 
 @property (nonatomic, strong) AVCaptureMultiCamSession  *cameraSession;
-
+@property (nonatomic, strong) VideoController *videoController;
 @property (nonatomic, strong) NSArray<PigeonSensor *> *sensors;
 @property (nonatomic, strong) NSMutableArray<CameraDeviceInfo *> *devices;
 @property (nonatomic, strong) dispatch_queue_t dispatchQueue;
@@ -41,12 +42,25 @@ AVCaptureAudioDataOutputSampleBufferDelegate>
 @property(readonly, nonatomic) bool mirrorFrontCamera;
 @property(nonatomic, nonatomic) NSMutableArray<CameraPreviewTexture *> *textures;
 @property(nonatomic, copy) void (^onPreviewFrameAvailable)(NSNumber * _Nullable);
+@property (nonatomic, strong) NSMutableArray<AVCaptureMovieFileOutput *> *movieFileOutputs;
+@property (nonatomic, strong) AVCaptureAudioDataOutput *audioOutput;
+@property (nonatomic, strong) AVCaptureDeviceInput *audioInput;
+@property(readonly, nonatomic) CaptureModes captureMode;
+@property(readonly, nonatomic) CupertinoVideoOptions *videoOptions;
+@property(readonly, nonatomic) UIDeviceOrientation deviceOrientation;
+@property(readonly, nonatomic) AVCaptureVideoDataOutput *captureVideoOutput;
+- (void)pauseVideoRecording;
+- (void)resumeVideoRecording;
 
-- (instancetype)initWithSensors:(NSArray<PigeonSensor *> *)sensors mirrorFrontCamera:(BOOL)mirrorFrontCamera
+- (instancetype)initWithSensors:(NSArray<PigeonSensor *> *)sensors
+                   videoOptions:(nullable CupertinoVideoOptions *)videoOptions
+              mirrorFrontCamera:(BOOL)mirrorFrontCamera
            enablePhysicalButton:(BOOL)enablePhysicalButton
                 aspectRatioMode:(AspectRatio)aspectRatioMode
                     captureMode:(CaptureModes)captureMode
                   dispatchQueue:(dispatch_queue_t)dispatchQueue;
+- (void)startRecordingToPaths:(NSArray<NSString *> *)paths completion:(void (^)(FlutterError * _Nullable))completion;
+- (void)stopRecordingVideo:(nonnull void (^)(NSNumber * _Nullable, FlutterError * _Nullable))completion;
 - (void)configInitialSession:(NSArray<PigeonSensor *> *)sensors;
 - (void)setSensors:(NSArray<PigeonSensor *> *)sensors;
 - (void)setMirrorFrontCamera:(bool)value error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error;
@@ -66,6 +80,8 @@ AVCaptureAudioDataOutputSampleBufferDelegate>
 - (void)setExifPreferencesGPSLocation:(bool)gpsLocation completion:(void(^)(NSNumber *_Nullable, FlutterError *_Nullable))completion;
 - (void)setOrientationEventSink:(FlutterEventSink)orientationEventSink;
 - (void)setPhysicalButtonEventSink:(FlutterEventSink)physicalButtonEventSink;
+- (void)setCaptureMode:(CaptureModes)captureMode error:(FlutterError * _Nullable __autoreleasing * _Nonnull)error;
+- (void)setRecordingAudioMode:(bool)isAudioEnabled completion:(void(^)(NSNumber *_Nullable, FlutterError *_Nullable))completion;
 
 @end
 
