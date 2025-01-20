@@ -83,7 +83,7 @@ class _CameraPageState extends State<CameraPage> {
                     ? SensorConfig.multiple(
                         sensors: (Platform.isIOS)
                             ? [
-                                Sensor.type(SensorType.telephoto),
+                                Sensor.type(SensorType.wideAngle),
                                 Sensor.position(SensorPosition.front),
                               ]
                             : [

@@ -21,56 +21,96 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 }
 
 # pragma mark - User video interactions
-
-/// Start recording video at given path
-- (void)recordVideoAtPath:(NSString *)path captureDevice:(AVCaptureDevice *)device orientation:(NSInteger)orientation audioSetupCallback:(OnAudioSetup)audioSetupCallback videoWriterCallback:(OnVideoWriterSetup)videoWriterCallback options:(CupertinoVideoOptions *)options quality:(VideoRecordingQuality)quality completion:(nonnull void (^)(FlutterError * _Nullable))completion {
-  _options = options;
-  _recordingQuality = quality;
-  
-  // Create audio & video writer
-  if (![self setupWriterForPath:path audioSetupCallback:audioSetupCallback options:options completion:completion]) {
-    completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"impossible to write video at path" details:path]);
-    return;
-  }
-  // Call parent to add delegates for video & audio (if needed)
-  videoWriterCallback();
-  
-  _isRecording = YES;
-  _videoTimeOffset = CMTimeMake(0, 1);
-  _audioTimeOffset = CMTimeMake(0, 1);
-  _videoIsDisconnected = NO;
-  _audioIsDisconnected = NO;
-  _orientation = orientation;
-  _captureDevice = device;
-  
-  // Change video FPS if provided
-  if (_options && _options.fps != nil && _options.fps > 0) {
-    [self adjustCameraFPS:_options.fps];
-  }
+- (void)recordVideoAtPaths:(NSArray<NSString *> *)paths
+            captureDevices:(NSArray<AVCaptureDevice *> *)devices
+               orientation:(NSInteger)orientation
+          audioSetupCallback:(OnAudioSetup)audioSetupCallback
+       videoWriterCallback:(OnVideoWriterSetup)videoWriterCallback
+                   options:(CupertinoVideoOptions *)options
+                   quality:(VideoRecordingQuality)quality
+                completion:(nonnull void (^)(FlutterError * _Nullable))completion {
+    if (paths.count != devices.count) {
+        completion([FlutterError errorWithCode:@"PATH_DEVICE_MISMATCH"
+                                       message:@"Number of paths does not match number of devices"
+                                       details:nil]);
+        return;
+    }
+    if (![self setupWritersForPaths:paths audioSetupCallback:audioSetupCallback options:options completion:completion]) {
+        completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"impossible to write video at path" details:paths]);
+      return;
+    }
+    videoWriterCallback();
+    
+    _isRecording = YES;
+    _videoTimeOffset = CMTimeMake(0, 1);
+    _audioTimeOffset = CMTimeMake(0, 1);
+    _videoIsDisconnected = NO;
+    _audioIsDisconnected = NO;
+    _orientation = orientation;
+    _captureDevices = devices;
+    
+    // Change video FPS if provided
+    if (_options && _options.fps != nil && _options.fps > 0) {
+        for (AVCaptureDevice *device in devices) {
+            [self adjustCameraFPS:_options.fps ofCaptureDevice:device];
+        }
+      
+    }
+    completion(nil);
 }
+
 
 /// Stop recording video
+
 - (void)stopRecordingVideo:(nonnull void (^)(NSNumber * _Nullable, FlutterError * _Nullable))completion {
-  if (_options && _options.fps != nil && _options.fps > 0) {
-    // Reset camera FPS
-    [self adjustCameraFPS:@(30)];
-  }
-  
-  if (_isRecording) {
-    _isRecording = NO;
-    if (_videoWriter.status != AVAssetWriterStatusUnknown) {
-      [_videoWriter finishWritingWithCompletionHandler:^{
-        if (self->_videoWriter.status == AVAssetWriterStatusCompleted) {
-          completion(@(YES), nil);
-        } else {
-          completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR" message:@"impossible to completely write video" details:@""]);
+    if (_options && _options.fps != nil && _options.fps > 0) {
+        // Reset camera FPS
+        for (AVCaptureDevice *device in _captureDevices) {
+            [self adjustCameraFPS:@(30) ofCaptureDevice:device];
         }
-      }];
     }
-  } else {
-    completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR" message:@"video is not recording" details:@""]);
-  }
+
+    if (_isRecording) {
+        _isRecording = NO;
+
+        // Create a dispatch group to wait for all recordings to complete
+        dispatch_group_t group = dispatch_group_create();
+        __block BOOL allSucceeded = YES;
+
+        for (NSUInteger i = 0; i < self.videoWriters.count; i++) {
+            AVAssetWriter *writer = self.videoWriters[i];
+            
+            if (writer.status != AVAssetWriterStatusUnknown) {
+                dispatch_group_enter(group);
+                
+                [writer finishWritingWithCompletionHandler:^{
+                    if (writer.status != AVAssetWriterStatusCompleted) {
+                        allSucceeded = NO;
+                        NSLog(@"Error: Failed to finish writing for video %lu", (unsigned long)i);
+                    }
+                    dispatch_group_leave(group);
+                }];
+            }
+        }
+
+        // Call the completion handler once all writers have finished
+        dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+            if (allSucceeded) {
+                completion(@(YES), nil);
+            } else {
+                completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR"
+                                                     message:@"One or more videos failed to completely write"
+                                                     details:@""]);
+            }
+        });
+    } else {
+        completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR"
+                                             message:@"video is not recording"
+                                             details:@""]);
+    }
 }
+
+
 
 - (void)pauseVideoRecording {
   _isPaused = YES;
@@ -83,72 +123,112 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 # pragma mark - Audio & Video writers
 
 /// Setup video channel & write file on path
-- (BOOL)setupWriterForPath:(NSString *)path audioSetupCallback:(OnAudioSetup)audioSetupCallback options:(CupertinoVideoOptions *)options completion:(nonnull void (^)(FlutterError * _Nullable))completion {
-  NSError *error = nil;
-  NSURL *outputURL;
-  if (path != nil) {
-    outputURL = [NSURL fileURLWithPath:path];
-  } else {
-    return NO;
-  }
-  if (_isAudioEnabled && !_isAudioSetup) {
-    audioSetupCallback();
-  }
-  
-  // Read from options if available
-  AVVideoCodecType codecType = [self getBestCodecTypeAccordingOptions:options];
-  AVFileType fileType = [self getBestFileTypeAccordingOptions:options];
-  CGSize videoSize = [self getBestVideoSizeAccordingQuality: _recordingQuality];
+- (BOOL)setupWritersForPaths:(NSArray<NSString *> *)paths
+          audioSetupCallback:(OnAudioSetup)audioSetupCallback
+                     options:(CupertinoVideoOptions *)options
+                  completion:(nonnull void (^)(FlutterError * _Nullable))completion {
+
+    if (paths.count == 0) {
+         completion([FlutterError errorWithCode:@"NO_PATHS"
+                                        message:@"No paths provided for video recording"
+                                        details:nil]);
+         return NO;
+     }
+
+    NSError *error = nil;
+
+    // Initialize arrays to store writers and inputs for each camera
+    _videoWriters = [NSMutableArray array];
+    _videoWriterInputs = [NSMutableArray array];
+    _videoAdaptors = [NSMutableArray array];
+    _audioWriterInputs = [NSMutableArray array]; // Added for audio inputs
+
     
-  NSDictionary *videoSettings = @{
-    AVVideoCodecKey   : codecType,
-    AVVideoWidthKey   : @(videoSize.height),
-    AVVideoHeightKey  : @(videoSize.width),
-  };
-  
-  _videoWriterInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:videoSettings];
-  [_videoWriterInput setTransform:[self getVideoOrientation]];
-  
-  _videoAdaptor = [AVAssetWriterInputPixelBufferAdaptor
-                   assetWriterInputPixelBufferAdaptorWithAssetWriterInput:_videoWriterInput
-                   sourcePixelBufferAttributes:@{
-    (NSString *)kCVPixelBufferPixelFormatTypeKey: @(videoFormat)
-  }];
-  
-  NSParameterAssert(_videoWriterInput);
-  _videoWriterInput.expectsMediaDataInRealTime = YES;
-  
-  _videoWriter = [[AVAssetWriter alloc] initWithURL:outputURL
-                                           fileType:fileType
-                                              error:&error];
-  NSParameterAssert(_videoWriter);
-  if (error) {
-    completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"impossible to create video writer, check your options" details:error.description]);
-    return NO;
-  }
-  
-  [_videoWriter addInput:_videoWriterInput];
-  
-  if (_isAudioEnabled) {
-    AudioChannelLayout acl;
-    bzero(&acl, sizeof(acl));
-    acl.mChannelLayoutTag = kAudioChannelLayoutTag_Mono;
-    NSDictionary *audioOutputSettings = nil;
-    
-    audioOutputSettings = [NSDictionary
-                           dictionaryWithObjectsAndKeys:[NSNumber numberWithInt:kAudioFormatMPEG4AAC], AVFormatIDKey,
-                           [NSNumber numberWithFloat:44100.0], AVSampleRateKey,
-                           [NSNumber numberWithInt:1], AVNumberOfChannelsKey,
-                           [NSData dataWithBytes:&acl length:sizeof(acl)],
-                           AVChannelLayoutKey, nil];
-    _audioWriterInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
-                                                           outputSettings:audioOutputSettings];
-    _audioWriterInput.expectsMediaDataInRealTime = YES;
-    
-    [_videoWriter addInput:_audioWriterInput];
-  }
-  
-  return YES;
+    for (NSUInteger i = 0; i < paths.count; i++) {
+        NSString *path = paths[i];
+        NSURL *outputURL = [NSURL fileURLWithPath:path];
+
+        if (_isAudioEnabled && !_isAudioSetup && i == 0) {
+            // Only call audio setup once
+            audioSetupCallback();
+        }
+
+        // Get video settings
+        AVVideoCodecType codecType = [self getBestCodecTypeAccordingOptions:options];
+        AVFileType fileType = [self getBestFileTypeAccordingOptions:options];
+        CGSize videoSize = [self getBestVideoSizeAccordingQuality:_recordingQuality];
+        if (videoSize.width <= 0 || videoSize.height <= 0) {
+            
+            completion([FlutterError errorWithCode:@"VIDEO_ERROR"
+                                           message:@"Unable to create video writer. videoSize is zero."
+                                           details:nil]);
+            return NO;
+        }
+        NSDictionary *videoSettings = @{
+            AVVideoCodecKey   : codecType,
+            AVVideoWidthKey   : @(videoSize.height),
+            AVVideoHeightKey  : @(videoSize.width),
+        };
+
+        // Create video writer input
+        AVAssetWriterInput *videoWriterInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
+                                                                                   outputSettings:videoSettings];
+        [videoWriterInput setTransform:[self getVideoOrientation]];
+        videoWriterInput.expectsMediaDataInRealTime = YES;
+
+        // Create pixel buffer adaptor
+        AVAssetWriterInputPixelBufferAdaptor *videoAdaptor = [AVAssetWriterInputPixelBufferAdaptor
+            assetWriterInputPixelBufferAdaptorWithAssetWriterInput:videoWriterInput
+                                  sourcePixelBufferAttributes:@{
+                                      (NSString *)kCVPixelBufferPixelFormatTypeKey: @(videoFormat)
+                                  }];
+
+        // Create video writer
+        AVAssetWriter *videoWriter = [[AVAssetWriter alloc] initWithURL:outputURL
+                                                               fileType:fileType
+                                                                  error:&error];
+        if (error) {
+            completion([FlutterError errorWithCode:@"VIDEO_ERROR"
+                                           message:@"Unable to create video writer. Check options."
+                                           details:error.description]);
+            return NO;
+        }
+
+        [videoWriter addInput:videoWriterInput];
+
+        // Store writer, input, and adaptor
+        [self.videoWriters addObject:videoWriter];
+        [self.videoWriterInputs addObject:videoWriterInput];
+        [self.videoAdaptors addObject:videoAdaptor];
+        
+
+    }
+
+    // Set up audio for the first video writer (shared across all videos)
+    if (_isAudioEnabled) {
+        AudioChannelLayout acl;
+                bzero(&acl, sizeof(acl));
+                acl.mChannelLayoutTag = kAudioChannelLayoutTag_Mono;
+
+                NSDictionary *audioOutputSettings = @{
+                    AVFormatIDKey: @(kAudioFormatMPEG4AAC),
+                    AVSampleRateKey: @(44100.0),
+                    AVNumberOfChannelsKey: @(1),
+                    AVChannelLayoutKey: [NSData dataWithBytes:&acl length:sizeof(acl)]
+                };
+
+                for (AVAssetWriter *videoWriter in self.videoWriters) {
+                    AVAssetWriterInput *audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
+                                                                                       outputSettings:audioOutputSettings];
+                    audioInput.expectsMediaDataInRealTime = YES;
+
+                    [videoWriter addInput:audioInput];
+                    [self.audioWriterInputs addObject:audioInput];
+                }
+        
+    }
+
+    return YES;
 }
 
 - (CGAffineTransform)getVideoOrientation {
@@ -172,21 +252,35 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
   return transform;
 }
 
-/// Append audio data
+/// Append audio data to the first video writer
 - (void)newAudioSample:(CMSampleBufferRef)sampleBuffer {
-  if (_videoWriter.status != AVAssetWriterStatusWriting) {
-    if (_videoWriter.status == AVAssetWriterStatusFailed) {
-      //      *error = [FlutterError errorWithCode:@"VIDEO_ERROR" message:@"writing video failed" details:_videoWriter.error];
+    if (self.videoWriters.count == 0 || self.audioWriterInputs.count == 0) {
+        NSLog(@"No video writers or audio writer inputs available for audio sample.");
+        return;
     }
-    return;
-  }
-  if (_audioWriterInput.readyForMoreMediaData) {
-    if (![_audioWriterInput appendSampleBuffer:sampleBuffer]) {
-      //      *error = [FlutterError errorWithCode:@"VIDEO_ERROR" message:@"adding audio channel failed" details:_videoWriter.error];
-    }
-  }
-}
 
+    for (NSUInteger i = 0; i < self.videoWriters.count; i++) {
+        AVAssetWriter *currentVideoWriter = self.videoWriters[i];
+        AVAssetWriterInput *currentAudioWriterInput = self.audioWriterInputs[i];
+
+        // Check the status of the current video writer
+        if (currentVideoWriter.status != AVAssetWriterStatusWriting) {
+            if (currentVideoWriter.status == AVAssetWriterStatusFailed) {
+                NSLog(@"Writing video failed for index %lu: %@", (unsigned long)i, currentVideoWriter.error.localizedDescription);
+            }
+            continue;
+        }
+
+        // Append audio sample to the current writer's audio input
+        if (currentAudioWriterInput.readyForMoreMediaData) {
+            if (![currentAudioWriterInput appendSampleBuffer:sampleBuffer]) {
+                NSLog(@"Failed to append audio sample to writer for index %lu: %@", (unsigned long)i, currentVideoWriter.error.localizedDescription);
+            }
+        } else {
+            NSLog(@"Audio writer input not ready for more media data for index %lu.", (unsigned long)i);
+        }
+    }
+}
 /// Adjust time to sync audio & video
 - (CMSampleBufferRef)adjustTime:(CMSampleBufferRef)sample by:(CMTime)offset CF_RETURNS_RETAINED {
   CMItemCount count;
@@ -204,93 +298,137 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 }
 
 /// Adjust video preview & recording to specified FPS
-- (void)adjustCameraFPS:(NSNumber *)fps {
-  NSArray *frameRateRanges = _captureDevice.activeFormat.videoSupportedFrameRateRanges;
+- (void)adjustCameraFPS:(NSNumber *)fps ofCaptureDevice: (AVCaptureDevice *) captureDevice {
+  NSArray *frameRateRanges = captureDevice.activeFormat.videoSupportedFrameRateRanges;
   
   if (frameRateRanges.count > 0) {
     AVFrameRateRange *frameRateRange = frameRateRanges.firstObject;
     NSError *error = nil;
     
-    if ([_captureDevice lockForConfiguration:&error]) {
+    if ([captureDevice lockForConfiguration:&error]) {
       CMTime frameDuration = CMTimeMake(1, [fps intValue]);
       if (CMTIME_COMPARE_INLINE(frameDuration, <=, frameRateRange.maxFrameDuration) && CMTIME_COMPARE_INLINE(frameDuration, >=, frameRateRange.minFrameDuration)) {
-        _captureDevice.activeVideoMinFrameDuration = frameDuration;
+        captureDevice.activeVideoMinFrameDuration = frameDuration;
       }
-      [_captureDevice unlockForConfiguration];
+      [captureDevice unlockForConfiguration];
     }
   }
 }
 
 # pragma mark - Camera Delegates
-- (void)captureOutput:(AVCaptureOutput *)output didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection captureVideoOutput:(AVCaptureVideoDataOutput *)captureVideoOutput {
-  
-  if (self.isPaused) {
-    return;
-  }
-  
-  if (_videoWriter.status == AVAssetWriterStatusFailed) {
-    //    _result([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"impossible to write video " details:_videoWriter.error]);
-    return;
-  }
-  
-  CFRetain(sampleBuffer);
-  CMTime currentSampleTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
-  
-  if (_videoWriter.status != AVAssetWriterStatusWriting) {
-    [_videoWriter startWriting];
-    [_videoWriter startSessionAtSourceTime:currentSampleTime];
-  }
-  
-  if (output == captureVideoOutput) {
-    if (_videoIsDisconnected) {
-      _videoIsDisconnected = NO;
-      
-      if (_videoTimeOffset.value == 0) {
-        _videoTimeOffset = CMTimeSubtract(currentSampleTime, _lastVideoSampleTime);
-      } else {
-        CMTime offset = CMTimeSubtract(currentSampleTime, _lastVideoSampleTime);
-        _videoTimeOffset = CMTimeAdd(_videoTimeOffset, offset);
-      }
-      
-      return;
+- (void)captureOutput:(AVCaptureOutput *)output
+ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
+       fromConnection:(AVCaptureConnection *)connection
+ captureVideoOutput:(AVCaptureVideoDataOutput * _Nullable)captureVideoOutput
+                index: (NSUInteger)index {
+    
+    if (self.isPaused) {
+            return;
+        }
+
+        if ([_videoWriters count] <= index || [_videoWriterInputs count] <= index) {
+            NSLog(@"Index out of bounds for video writers or inputs.");
+            return;
+        }
+
+        AVAssetWriter *currentVideoWriter = self.videoWriters[index];
+        AVAssetWriterInput *currentVideoInput = self.videoWriterInputs[index];
+        AVAssetWriterInputPixelBufferAdaptor *currentVideoAdaptor = self.videoAdaptors[index];
+
+        CFRetain(sampleBuffer);
+        CMTime currentSampleTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
+
+        // Validate CMTime
+        if (!CMTIME_IS_VALID(currentSampleTime)) {
+            NSLog(@"Invalid sample time for index: %lu", (unsigned long)index);
+            CFRelease(sampleBuffer);
+            return;
+        }
+
+        // Handle video writer failures
+        if (currentVideoWriter.status == AVAssetWriterStatusFailed) {
+            NSLog(@"Video Writer Error for index %lu: %@", (unsigned long)index, currentVideoWriter.error);
+            CFRelease(sampleBuffer);
+            return;
+        }
+
+        // Start writing if not already started
+        if (currentVideoWriter.status != AVAssetWriterStatusWriting) {
+            [currentVideoWriter startWriting];
+            [currentVideoWriter startSessionAtSourceTime:currentSampleTime];
+        }
+
+        // Handle video output
+        if (output == captureVideoOutput) {
+            if (self.videoIsDisconnected) {
+                self.videoIsDisconnected = NO;
+
+                if (CMTIME_IS_INVALID(self.lastVideoSampleTime)) {
+                    _videoTimeOffset = CMTimeSubtract(currentSampleTime, kCMTimeZero);
+                } else {
+                    CMTime offset = CMTimeSubtract(currentSampleTime, self.lastVideoSampleTime);
+                    _videoTimeOffset = CMTimeAdd(self.videoTimeOffset, offset);
+                }
+
+                CFRelease(sampleBuffer);
+                return;
+            }
+
+            _lastVideoSampleTime = currentSampleTime;
+
+            CVPixelBufferRef nextBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+            CMTime nextSampleTime = CMTimeSubtract(currentSampleTime, self.videoTimeOffset);
+
+            if (!CMTIME_IS_VALID(nextSampleTime)) {
+                NSLog(@"Invalid nextSampleTime, skipping frame.");
+                CFRelease(sampleBuffer);
+                return;
+            }
+
+            if (currentVideoInput.isReadyForMoreMediaData) {
+                [currentVideoAdaptor appendPixelBuffer:nextBuffer withPresentationTime:nextSampleTime];
+            } else {
+                NSLog(@"Video Input not ready.");
+            }
+
+        
+    } else {
+        // Handle audio output
+        CMTime duration = CMSampleBufferGetDuration(sampleBuffer);
+
+        if (duration.value > 0) {
+            currentSampleTime = CMTimeAdd(currentSampleTime, duration);
+        }
+
+        if (self.audioIsDisconnected) {
+            self.audioIsDisconnected = NO;
+
+            if (self.audioTimeOffset.value == 0) {
+                self.audioTimeOffset = CMTimeSubtract(currentSampleTime, self.lastAudioSampleTime);
+            } else {
+                CMTime offset = CMTimeSubtract(currentSampleTime, self.lastAudioSampleTime);
+                self.audioTimeOffset = CMTimeAdd(self.audioTimeOffset, offset);
+            }
+
+            CFRelease(sampleBuffer);
+            return;
+        }
+
+        self.lastAudioSampleTime = currentSampleTime;
+
+        if (self.audioTimeOffset.value != 0) {
+            CFRelease(sampleBuffer);
+            sampleBuffer = [self adjustTime:sampleBuffer by:self.audioTimeOffset];
+        }
+
+        [self newAudioSample:sampleBuffer];
     }
-    
-    _lastVideoSampleTime = currentSampleTime;
-    
-    CVPixelBufferRef nextBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
-    CMTime nextSampleTime = CMTimeSubtract(_lastVideoSampleTime, _videoTimeOffset);
-    [_videoAdaptor appendPixelBuffer:nextBuffer withPresentationTime:nextSampleTime];
-  } else {
-    CMTime dur = CMSampleBufferGetDuration(sampleBuffer);
-    
-    if (dur.value > 0) {
-      currentSampleTime = CMTimeAdd(currentSampleTime, dur);
-    }
-    if (_audioIsDisconnected) {
-      _audioIsDisconnected = NO;
-      
-      if (_audioTimeOffset.value == 0) {
-        _audioTimeOffset = CMTimeSubtract(currentSampleTime, _lastAudioSampleTime);
-      } else {
-        CMTime offset = CMTimeSubtract(currentSampleTime, _lastAudioSampleTime);
-        _audioTimeOffset = CMTimeAdd(_audioTimeOffset, offset);
-      }
-      
-      return;
-    }
-    
-    _lastAudioSampleTime = currentSampleTime;
-    
-    if (_audioTimeOffset.value != 0) {
-      CFRelease(sampleBuffer);
-      sampleBuffer = [self adjustTime:sampleBuffer by:_audioTimeOffset];
-    }
-    
-    [self newAudioSample:sampleBuffer];
-  }
-  
-  CFRelease(sampleBuffer);
+
+    CFRelease(sampleBuffer);
 }
+
+
+
 
 # pragma mark - Settings converters
 
@@ -368,7 +506,7 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     case VideoRecordingQualityUhd:
     case VideoRecordingQualityHighest:
       if (@available(iOS 9.0, *)) {
-        if ([_captureDevice supportsAVCaptureSessionPreset:AVCaptureSessionPreset3840x2160]) {
+          if ([_captureDevices.firstObject supportsAVCaptureSessionPreset:AVCaptureSessionPreset3840x2160]) {
           size = CGSizeMake(3840, 2160);
         } else {
           size = CGSizeMake(1920, 1080);
@@ -398,6 +536,9 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 }
 
 # pragma mark - Setter
+- (void)setVideoIsDisconnected:(bool)isVideoDisconnected {
+    _videoIsDisconnected = isVideoDisconnected;
+}
 - (void)setIsAudioEnabled:(bool)isAudioEnabled {
   _isAudioEnabled = isAudioEnabled;
 }
@@ -407,10 +548,6 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
 - (void)setPreviewSize:(CGSize)previewSize {
   _previewSize = previewSize;
-}
-
-- (void)setVideoIsDisconnected:(bool)videoIsDisconnected {
-  _videoIsDisconnected = videoIsDisconnected;
 }
 
 - (void)setAudioIsDisconnected:(bool)audioIsDisconnected {
