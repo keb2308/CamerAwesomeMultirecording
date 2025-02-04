@@ -80,7 +80,7 @@ enum CamerAwesomePermission {
   storage,
   camera,
   location,
-  recordAudio,
+  record_audio,
 }
 
 enum AnalysisImageFormat {
@@ -502,7 +502,6 @@ class AnalysisImageWrapper {
 
 class _AnalysisImageUtilsCodec extends StandardMessageCodec {
   const _AnalysisImageUtilsCodec();
-
   @override
   void writeValue(WriteBuffer buffer, Object? value) {
     if (value is AnalysisImageWrapper) {
@@ -659,7 +658,6 @@ class AnalysisImageUtils {
 
 class _CameraInterfaceCodec extends StandardMessageCodec {
   const _CameraInterfaceCodec();
-
   @override
   void writeValue(WriteBuffer buffer, Object? value) {
     if (value is AndroidFocusSettings) {
@@ -936,6 +934,50 @@ class CameraInterface {
   Future<void> resumeVideoRecording() async {
     final BasicMessageChannel<Object?> channel = BasicMessageChannel<Object?>(
         'dev.flutter.pigeon.CameraInterface.resumeVideoRecording', codec,
+        binaryMessenger: _binaryMessenger);
+    final List<Object?>? replyList = await channel.send(null) as List<Object?>?;
+    if (replyList == null) {
+      throw PlatformException(
+        code: 'channel-error',
+        message: 'Unable to establish connection on channel.',
+      );
+    } else if (replyList.length > 1) {
+      throw PlatformException(
+        code: replyList[0]! as String,
+        message: replyList[1] as String?,
+        details: replyList[2],
+      );
+    } else {
+      return;
+    }
+  }
+
+  Future<void> pseudoPauseVideoRecording(Uint8List? arg_imageData) async {
+    final BasicMessageChannel<Object?> channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.CameraInterface.pseudoPauseVideoRecording', codec,
+        binaryMessenger: _binaryMessenger);
+    final List<Object?>? replyList =
+        await channel.send(<Object?>[arg_imageData]) as List<Object?>?;
+    if (replyList == null) {
+      throw PlatformException(
+        code: 'channel-error',
+        message: 'Unable to establish connection on channel.',
+      );
+    } else if (replyList.length > 1) {
+      throw PlatformException(
+        code: replyList[0]! as String,
+        message: replyList[1] as String?,
+        details: replyList[2],
+      );
+    } else {
+      return;
+    }
+  }
+
+  Future<void> resumePseudoPausedVideoRecording() async {
+    final BasicMessageChannel<Object?> channel = BasicMessageChannel<Object?>(
+        'dev.flutter.pigeon.CameraInterface.resumePseudoPausedVideoRecording',
+        codec,
         binaryMessenger: _binaryMessenger);
     final List<Object?>? replyList = await channel.send(null) as List<Object?>?;
     if (replyList == null) {

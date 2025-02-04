@@ -829,6 +829,42 @@ void CameraInterfaceSetup(id<FlutterBinaryMessenger> binaryMessenger, NSObject<C
   {
     FlutterBasicMessageChannel *channel =
       [[FlutterBasicMessageChannel alloc]
+        initWithName:@"dev.flutter.pigeon.CameraInterface.pseudoPauseVideoRecording"
+        binaryMessenger:binaryMessenger
+        codec:CameraInterfaceGetCodec()];
+    if (api) {
+      NSCAssert([api respondsToSelector:@selector(pseudoPauseVideoRecordingImageData:error:)], @"CameraInterface api (%@) doesn't respond to @selector(pseudoPauseVideoRecordingImageData:error:)", api);
+      [channel setMessageHandler:^(id _Nullable message, FlutterReply callback) {
+        NSArray *args = message;
+        FlutterStandardTypedData *arg_imageData = GetNullableObjectAtIndex(args, 0);
+        FlutterError *error;
+        [api pseudoPauseVideoRecordingImageData:arg_imageData error:&error];
+        callback(wrapResult(nil, error));
+      }];
+    } else {
+      [channel setMessageHandler:nil];
+    }
+  }
+  {
+    FlutterBasicMessageChannel *channel =
+      [[FlutterBasicMessageChannel alloc]
+        initWithName:@"dev.flutter.pigeon.CameraInterface.resumePseudoPausedVideoRecording"
+        binaryMessenger:binaryMessenger
+        codec:CameraInterfaceGetCodec()];
+    if (api) {
+      NSCAssert([api respondsToSelector:@selector(resumePseudoPausedVideoRecordingWithError:)], @"CameraInterface api (%@) doesn't respond to @selector(resumePseudoPausedVideoRecordingWithError:)", api);
+      [channel setMessageHandler:^(id _Nullable message, FlutterReply callback) {
+        FlutterError *error;
+        [api resumePseudoPausedVideoRecordingWithError:&error];
+        callback(wrapResult(nil, error));
+      }];
+    } else {
+      [channel setMessageHandler:nil];
+    }
+  }
+  {
+    FlutterBasicMessageChannel *channel =
+      [[FlutterBasicMessageChannel alloc]
         initWithName:@"dev.flutter.pigeon.CameraInterface.receivedImageFromStream"
         binaryMessenger:binaryMessenger
         codec:CameraInterfaceGetCodec()];

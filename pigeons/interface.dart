@@ -356,6 +356,10 @@ abstract class CameraInterface {
 
   void resumeVideoRecording();
 
+  void pseudoPauseVideoRecording(Uint8List? imageData);
+
+  void resumePseudoPausedVideoRecording();
+
   void receivedImageFromStream();
 
   @async

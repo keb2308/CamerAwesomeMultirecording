@@ -280,6 +280,8 @@ NSObject<FlutterMessageCodec> *CameraInterfaceGetCodec(void);
 - (void)recordVideoSensors:(NSArray<PigeonSensor *> *)sensors paths:(NSArray<NSString *> *)paths completion:(void (^)(FlutterError *_Nullable))completion;
 - (void)pauseVideoRecordingWithError:(FlutterError *_Nullable *_Nonnull)error;
 - (void)resumeVideoRecordingWithError:(FlutterError *_Nullable *_Nonnull)error;
+- (void)pseudoPauseVideoRecordingImageData:(nullable FlutterStandardTypedData *)imageData error:(FlutterError *_Nullable *_Nonnull)error;
+- (void)resumePseudoPausedVideoRecordingWithError:(FlutterError *_Nullable *_Nonnull)error;
 - (void)receivedImageFromStreamWithError:(FlutterError *_Nullable *_Nonnull)error;
 - (void)stopRecordingVideoWithCompletion:(void (^)(NSNumber *_Nullable, FlutterError *_Nullable))completion;
 /// @return `nil` only when `error != nil`.

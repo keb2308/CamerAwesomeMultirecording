@@ -771,6 +771,8 @@ interface CameraInterface {
   fun recordVideo(sensors: List<PigeonSensor>, paths: List<String?>, callback: (Result<Unit>) -> Unit)
   fun pauseVideoRecording()
   fun resumeVideoRecording()
+  fun pseudoPauseVideoRecording(imageData: ByteArray?)
+  fun resumePseudoPausedVideoRecording()
   fun receivedImageFromStream()
   fun stopRecordingVideo(callback: (Result<Boolean>) -> Unit)
   fun getFrontSensors(): List<PigeonSensorTypeDevice>
@@ -966,6 +968,42 @@ interface CameraInterface {
             var wrapped: List<Any?>
             try {
               api.resumeVideoRecording()
+              wrapped = listOf<Any?>(null)
+            } catch (exception: Throwable) {
+              wrapped = wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.CameraInterface.pseudoPauseVideoRecording", codec)
+        if (api != null) {
+          channel.setMessageHandler { message, reply ->
+            val args = message as List<Any?>
+            val imageDataArg = args[0] as ByteArray?
+            var wrapped: List<Any?>
+            try {
+              api.pseudoPauseVideoRecording(imageDataArg)
+              wrapped = listOf<Any?>(null)
+            } catch (exception: Throwable) {
+              wrapped = wrapError(exception)
+            }
+            reply.reply(wrapped)
+          }
+        } else {
+          channel.setMessageHandler(null)
+        }
+      }
+      run {
+        val channel = BasicMessageChannel<Any?>(binaryMessenger, "dev.flutter.pigeon.CameraInterface.resumePseudoPausedVideoRecording", codec)
+        if (api != null) {
+          channel.setMessageHandler { _, reply ->
+            var wrapped: List<Any?>
+            try {
+              api.resumePseudoPausedVideoRecording()
               wrapped = listOf<Any?>(null)
             } catch (exception: Throwable) {
               wrapped = wrapError(exception)
