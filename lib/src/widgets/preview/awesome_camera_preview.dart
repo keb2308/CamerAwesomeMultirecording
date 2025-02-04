@@ -203,6 +203,10 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
                   ),
                 ),
               ),
+
+              // TODO: be draggable
+              // TODO: add shadow & border
+              ..._buildPreviewTextures(),
               if (widget.previewDecoratorBuilder != null && _preview != null)
                 Positioned.fill(
                   child: widget.previewDecoratorBuilder!(
@@ -217,9 +221,6 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
                     _preview!,
                   ),
                 ),
-              // TODO: be draggable
-              // TODO: add shadow & border
-              ..._buildPreviewTextures(),
             ],
           );
         },
