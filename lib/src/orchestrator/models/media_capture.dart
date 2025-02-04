@@ -10,6 +10,7 @@ enum MediaCaptureStatus {
 enum VideoState {
   started,
   paused,
+  pseudoPaused,
   resumed,
   stopped,
   error,

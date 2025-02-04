@@ -7,6 +7,10 @@
 
 #import "MultiCameraPreview.h"
 
+@interface MultiCameraPreview()
+@property (nonatomic, strong) UIView *overlayView;
+@end
+
 @implementation MultiCameraPreview
 
 - (instancetype)initWithSensors:(NSArray<PigeonSensor *> *)sensors
@@ -56,7 +60,13 @@
     
     return self;
 }
-
+- (void)setupOverlay {
+    // Create a full-screen black overlay
+//    self.overlayView = [[UIView alloc] initWithFrame:self.previewLayer.frame];
+//    self.overlayView.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.7]; // Semi-transparent
+//    self.overlayView.hidden = YES; // Initially hidden
+//    [self.previewLayer addSublayer:self.overlayView.layer]; // Add to preview layer
+}
 /// Set orientation stream Flutter sink
 - (void)setOrientationEventSink:(FlutterEventSink)orientationEventSink {
     if (_motionController != nil) {
@@ -403,7 +413,6 @@
 - (void)captureOutput:(AVCaptureOutput *)output
  didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
        fromConnection:(AVCaptureConnection *)connection {
-
     // Check if output is video
     if ([output isKindOfClass:[AVCaptureVideoDataOutput class]]) {
         int index = 0;
@@ -416,7 +425,6 @@
                                      captureVideoOutput:device.videoDataOutput
                                                   index:index];
                 }
-                // Update preview
                 [_textures[index] updateBuffer:sampleBuffer];
                 if (_onPreviewFrameAvailable) {
                     _onPreviewFrameAvailable(@(index));
@@ -437,7 +445,6 @@
         }
     }
 }
-
 - (void)startRecordingToPaths:(NSArray<NSString *> *)paths completion:(void (^)(FlutterError * _Nullable))completion {
     if (paths.count != self.movieFileOutputs.count) {
             completion([FlutterError errorWithCode:@"PATH_COUNT_MISMATCH" message:@"Path count does not match camera count" details:nil]);
@@ -480,6 +487,16 @@
       completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR" message:@"video is not recording" details:@""]);
     }
 }
+/// sudo Pause video recording
+- (void)sudoPauseVideoRecording:(UIImage * _Nullable)image {
+    [_videoController sudoPauseVideoRecording:image];
+}
+
+/// Resume video recording after being sudo paused
+- (void)resumePseudoPausedVideoRecording {
+    [_videoController resumePseudoPausedVideoRecording];
+}
+
 /// Pause video recording
 - (void)pauseVideoRecording {
   [_videoController pauseVideoRecording];
@@ -495,32 +512,12 @@
       return;
     }
     _captureMode = captureMode;
-//    [self.cameraSession beginConfiguration];
 
     if (captureMode == Video) {
         [self setUpCaptureSessionForAudioError:^(NSError *audioError) {
           *error = [FlutterError errorWithCode:@"VIDEO_ERROR" message:@"error when trying to setup audio" details:[audioError localizedDescription]];
         }];
-        // Remove photo outputs
-//        for (AVCaptureOutput *output in self.cameraSession.outputs) {
-//            if ([output isKindOfClass:[AVCapturePhotoOutput class]]) {
-//                [self.cameraSession removeOutput:output];
-//            }
-//        }
-    } else {
-        // Remove video outputs and ensure type compatibility
-//        NSMutableArray *outputsToRemove = [NSMutableArray new];
-//        for (AVCaptureOutput *output in self.cameraSession.outputs) {
-//            if ([output isKindOfClass:[AVCaptureMovieFileOutput class]]) {
-//                [self.cameraSession removeOutput:output];
-//                [outputsToRemove addObject:(AVCaptureMovieFileOutput *)output];
-//            }
-//        }
-//        // Remove movie file outputs from array
-//        [self.movieFileOutputs removeObjectsInArray:outputsToRemove];
     }
-
-//    [self.cameraSession commitConfiguration];
 }
 # pragma mark - Audio
 // Set audio recording mode

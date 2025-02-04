@@ -293,6 +293,14 @@ class CamerawesomePlugin {
     return CameraInterface().resumeVideoRecording();
   }
 
+  static pseudoPauseVideoRecording(Uint8List? imageData) {
+    CameraInterface().pseudoPauseVideoRecording(imageData);
+  }
+
+  static resumePseudoPausedVideoRecording() {
+    return CameraInterface().resumePseudoPausedVideoRecording();
+  }
+
   static stopRecordingVideo() {
     return CameraInterface().stopRecordingVideo();
   }

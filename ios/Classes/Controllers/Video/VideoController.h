@@ -19,6 +19,7 @@ typedef void(^OnVideoWriterSetup)(void);
 
 @property(readonly, nonatomic) bool isRecording;
 @property(readonly, nonatomic) bool isPaused;
+@property(readonly, nonatomic) bool isSudoPaused;
 @property(readonly, nonatomic) bool isAudioEnabled;
 @property(readonly, nonatomic) bool isAudioSetup;
 @property(readonly, nonatomic) VideoRecordingQuality recordingQuality;
@@ -36,6 +37,7 @@ typedef void(^OnVideoWriterSetup)(void);
 @property(readonly, nonatomic) CGSize previewSize;
 @property(assign, nonatomic) CMTime lastAudioSampleTime;
 @property(assign, nonatomic) CMTime audioTimeOffset;
+@property (copy, nonatomic) UIImage *placeholderImage;
 
 - (instancetype)init;
 - (void)recordVideoAtPaths:(NSArray<NSString *> *)paths
@@ -50,6 +52,8 @@ typedef void(^OnVideoWriterSetup)(void);
 - (void)stopRecordingVideo:(nonnull void (^)(NSNumber * _Nullable, FlutterError * _Nullable))completion;
 - (void)pauseVideoRecording;
 - (void)resumeVideoRecording;
+- (void)sudoPauseVideoRecording:(UIImage * _Nullable)image;
+- (void)resumePseudoPausedVideoRecording;
 - (void)captureOutput:(AVCaptureOutput *)output
  didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
        fromConnection:(AVCaptureConnection *)connection
@@ -60,7 +64,7 @@ typedef void(^OnVideoWriterSetup)(void);
 - (void)setVideoIsDisconnected:(bool)videoIsDisconnected;
 - (void)setAudioIsDisconnected:(bool)audioIsDisconnected;
 - (void)setPreviewSize:(CGSize)previewSize;
-
+- (CVPixelBufferRef) getSampleBuffer;
 @end
 
 NS_ASSUME_NONNULL_END

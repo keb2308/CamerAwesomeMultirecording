@@ -144,6 +144,10 @@ class _CameraPageState extends State<CameraPage> {
                   );
                 },
                 previewDecoratorBuilder: (state, _) {
+                  // if (state.captureState?.videoState ==
+                  //     VideoState.pseudoPaused) {
+                  //   return const SizedBox.shrink();
+                  // }
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,

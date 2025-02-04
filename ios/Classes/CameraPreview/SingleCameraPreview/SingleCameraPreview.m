@@ -491,6 +491,14 @@
     completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"already recording video" details:@""]);
   }
 }
+/// sudo Pause video recording
+- (void)sudoPauseVideoRecording:(UIImage * _Nullable)image {
+    [_videoController sudoPauseVideoRecording:image];
+}
+/// Resume video recording after being sudo paused
+- (void)resumePseudoPausedVideoRecording{
+    [_videoController resumePseudoPausedVideoRecording];
+}
 
 /// Pause video recording
 - (void)pauseVideoRecording {

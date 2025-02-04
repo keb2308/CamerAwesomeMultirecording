@@ -6,41 +6,53 @@
 //
 
 #import "VideoController.h"
+#import <Accelerate/Accelerate.h>
 
 FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
-@implementation VideoController
-
+@implementation VideoController {
+    CVPixelBufferRef _cachedPixelBuffer;
+    CVPixelBufferPoolRef _pixelBufferPool;
+    
+}
 - (instancetype)init {
-  self = [super init];
-  _isRecording = NO;
-  _isAudioEnabled = YES;
-  _isPaused = NO;
-  
-  return self;
+    self = [super init];
+    _isRecording = NO;
+    _isAudioEnabled = YES;
+    _isPaused = NO;
+    _isSudoPaused = NO;
+    return self;
 }
 
-# pragma mark - User video interactions
+#pragma mark - User video interactions
 - (void)recordVideoAtPaths:(NSArray<NSString *> *)paths
             captureDevices:(NSArray<AVCaptureDevice *> *)devices
                orientation:(NSInteger)orientation
-          audioSetupCallback:(OnAudioSetup)audioSetupCallback
+        audioSetupCallback:(OnAudioSetup)audioSetupCallback
        videoWriterCallback:(OnVideoWriterSetup)videoWriterCallback
                    options:(CupertinoVideoOptions *)options
                    quality:(VideoRecordingQuality)quality
-                completion:(nonnull void (^)(FlutterError * _Nullable))completion {
+                completion:
+                    (nonnull void (^)(FlutterError *_Nullable))completion {
     if (paths.count != devices.count) {
-        completion([FlutterError errorWithCode:@"PATH_DEVICE_MISMATCH"
-                                       message:@"Number of paths does not match number of devices"
-                                       details:nil]);
+        completion([FlutterError
+            errorWithCode:@"PATH_DEVICE_MISMATCH"
+                  message:@"Number of paths does not match number of devices"
+                  details:nil]);
         return;
     }
-    if (![self setupWritersForPaths:paths audioSetupCallback:audioSetupCallback options:options completion:completion]) {
-        completion([FlutterError errorWithCode:@"VIDEO_ERROR" message:@"impossible to write video at path" details:paths]);
-      return;
+    if (![self setupWritersForPaths:paths
+                 audioSetupCallback:audioSetupCallback
+                            options:options
+                         completion:completion]) {
+        completion([FlutterError
+            errorWithCode:@"VIDEO_ERROR"
+                  message:@"impossible to write video at path"
+                  details:paths]);
+        return;
     }
     videoWriterCallback();
-    
+
     _isRecording = YES;
     _videoTimeOffset = CMTimeMake(0, 1);
     _audioTimeOffset = CMTimeMake(0, 1);
@@ -48,21 +60,20 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     _audioIsDisconnected = NO;
     _orientation = orientation;
     _captureDevices = devices;
-    
+
     // Change video FPS if provided
     if (_options && _options.fps != nil && _options.fps > 0) {
         for (AVCaptureDevice *device in devices) {
             [self adjustCameraFPS:_options.fps ofCaptureDevice:device];
         }
-      
     }
     completion(nil);
 }
 
-
 /// Stop recording video
 
-- (void)stopRecordingVideo:(nonnull void (^)(NSNumber * _Nullable, FlutterError * _Nullable))completion {
+- (void)stopRecordingVideo:
+    (nonnull void (^)(NSNumber *_Nullable, FlutterError *_Nullable))completion {
     if (_options && _options.fps != nil && _options.fps > 0) {
         // Reset camera FPS
         for (AVCaptureDevice *device in _captureDevices) {
@@ -79,61 +90,74 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
         for (NSUInteger i = 0; i < self.videoWriters.count; i++) {
             AVAssetWriter *writer = self.videoWriters[i];
-            
+
             if (writer.status != AVAssetWriterStatusUnknown) {
                 dispatch_group_enter(group);
-                
+
                 [writer finishWritingWithCompletionHandler:^{
-                    if (writer.status != AVAssetWriterStatusCompleted) {
-                        allSucceeded = NO;
-                        NSLog(@"Error: Failed to finish writing for video %lu", (unsigned long)i);
-                    }
-                    dispatch_group_leave(group);
+                  if (writer.status != AVAssetWriterStatusCompleted) {
+                      allSucceeded = NO;
+                      NSLog(@"Error: Failed to finish writing for video %lu",
+                            (unsigned long)i);
+                  }
+                  dispatch_group_leave(group);
                 }];
             }
         }
 
         // Call the completion handler once all writers have finished
         dispatch_group_notify(group, dispatch_get_main_queue(), ^{
-            if (allSucceeded) {
-                completion(@(YES), nil);
-            } else {
-                completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR"
-                                                     message:@"One or more videos failed to completely write"
-                                                     details:@""]);
-            }
+          if (allSucceeded) {
+              completion(@(YES), nil);
+          } else {
+              completion(
+                  @(NO),
+                  [FlutterError
+                      errorWithCode:@"VIDEO_ERROR"
+                            message:
+                                @"One or more videos failed to completely write"
+                            details:@""]);
+          }
         });
     } else {
         completion(@(NO), [FlutterError errorWithCode:@"VIDEO_ERROR"
-                                             message:@"video is not recording"
-                                             details:@""]);
+                                              message:@"video is not recording"
+                                              details:@""]);
     }
 }
 
+- (void)sudoPauseVideoRecording:(UIImage * _Nullable)image {
+    self.placeholderImage = image;
+    _isSudoPaused = YES;
+}
 
+- (void)resumePseudoPausedVideoRecording {
+    _isSudoPaused = NO;
+}
 
 - (void)pauseVideoRecording {
-  _isPaused = YES;
+    _isPaused = YES;
 }
 
 - (void)resumeVideoRecording {
-  _isPaused = NO;
+    _isPaused = NO;
 }
 
-# pragma mark - Audio & Video writers
+#pragma mark - Audio & Video writers
 
 /// Setup video channel & write file on path
 - (BOOL)setupWritersForPaths:(NSArray<NSString *> *)paths
           audioSetupCallback:(OnAudioSetup)audioSetupCallback
                      options:(CupertinoVideoOptions *)options
-                  completion:(nonnull void (^)(FlutterError * _Nullable))completion {
-
+                  completion:
+                      (nonnull void (^)(FlutterError *_Nullable))completion {
     if (paths.count == 0) {
-         completion([FlutterError errorWithCode:@"NO_PATHS"
-                                        message:@"No paths provided for video recording"
-                                        details:nil]);
-         return NO;
-     }
+        completion([FlutterError
+            errorWithCode:@"NO_PATHS"
+                  message:@"No paths provided for video recording"
+                  details:nil]);
+        return NO;
+    }
 
     NSError *error = nil;
 
@@ -141,9 +165,8 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
     _videoWriters = [NSMutableArray array];
     _videoWriterInputs = [NSMutableArray array];
     _videoAdaptors = [NSMutableArray array];
-    _audioWriterInputs = [NSMutableArray array]; // Added for audio inputs
+    _audioWriterInputs = [NSMutableArray array];  // Added for audio inputs
 
-    
     for (NSUInteger i = 0; i < paths.count; i++) {
         NSString *path = paths[i];
         NSURL *outputURL = [NSURL fileURLWithPath:path];
@@ -154,43 +177,53 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
         }
 
         // Get video settings
-        AVVideoCodecType codecType = [self getBestCodecTypeAccordingOptions:options];
+        AVVideoCodecType codecType =
+            [self getBestCodecTypeAccordingOptions:options];
         AVFileType fileType = [self getBestFileTypeAccordingOptions:options];
-        CGSize videoSize = [self getBestVideoSizeAccordingQuality:_recordingQuality];
+        CGSize videoSize =
+            [self getBestVideoSizeAccordingQuality:_recordingQuality];
         if (videoSize.width <= 0 || videoSize.height <= 0) {
-            
-            completion([FlutterError errorWithCode:@"VIDEO_ERROR"
-                                           message:@"Unable to create video writer. videoSize is zero."
-                                           details:nil]);
+            completion([FlutterError
+                errorWithCode:@"VIDEO_ERROR"
+                      message:
+                          @"Unable to create video writer. videoSize is zero."
+                      details:nil]);
             return NO;
         }
         NSDictionary *videoSettings = @{
-            AVVideoCodecKey   : codecType,
-            AVVideoWidthKey   : @(videoSize.height),
-            AVVideoHeightKey  : @(videoSize.width),
+            AVVideoCodecKey : codecType,
+            AVVideoWidthKey : @(videoSize.height),
+            AVVideoHeightKey : @(videoSize.width),
         };
 
         // Create video writer input
-        AVAssetWriterInput *videoWriterInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
-                                                                                   outputSettings:videoSettings];
+        AVAssetWriterInput *videoWriterInput =
+            [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo
+                                               outputSettings:videoSettings];
         [videoWriterInput setTransform:[self getVideoOrientation]];
         videoWriterInput.expectsMediaDataInRealTime = YES;
 
         // Create pixel buffer adaptor
-        AVAssetWriterInputPixelBufferAdaptor *videoAdaptor = [AVAssetWriterInputPixelBufferAdaptor
-            assetWriterInputPixelBufferAdaptorWithAssetWriterInput:videoWriterInput
-                                  sourcePixelBufferAttributes:@{
-                                      (NSString *)kCVPixelBufferPixelFormatTypeKey: @(videoFormat)
-                                  }];
+        AVAssetWriterInputPixelBufferAdaptor *videoAdaptor =
+            [AVAssetWriterInputPixelBufferAdaptor
+                assetWriterInputPixelBufferAdaptorWithAssetWriterInput:
+                    videoWriterInput
+                                           sourcePixelBufferAttributes:@{
+                                               (NSString *)
+                                               kCVPixelBufferPixelFormatTypeKey :
+                                                   @(videoFormat)
+                                           }];
 
         // Create video writer
-        AVAssetWriter *videoWriter = [[AVAssetWriter alloc] initWithURL:outputURL
-                                                               fileType:fileType
-                                                                  error:&error];
+        AVAssetWriter *videoWriter =
+            [[AVAssetWriter alloc] initWithURL:outputURL
+                                      fileType:fileType
+                                         error:&error];
         if (error) {
-            completion([FlutterError errorWithCode:@"VIDEO_ERROR"
-                                           message:@"Unable to create video writer. Check options."
-                                           details:error.description]);
+            completion([FlutterError
+                errorWithCode:@"VIDEO_ERROR"
+                      message:@"Unable to create video writer. Check options."
+                      details:error.description]);
             return NO;
         }
 
@@ -200,62 +233,61 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
         [self.videoWriters addObject:videoWriter];
         [self.videoWriterInputs addObject:videoWriterInput];
         [self.videoAdaptors addObject:videoAdaptor];
-        
-
     }
 
     // Set up audio for the first video writer (shared across all videos)
     if (_isAudioEnabled) {
         AudioChannelLayout acl;
-                bzero(&acl, sizeof(acl));
-                acl.mChannelLayoutTag = kAudioChannelLayoutTag_Mono;
+        bzero(&acl, sizeof(acl));
+        acl.mChannelLayoutTag = kAudioChannelLayoutTag_Mono;
 
-                NSDictionary *audioOutputSettings = @{
-                    AVFormatIDKey: @(kAudioFormatMPEG4AAC),
-                    AVSampleRateKey: @(44100.0),
-                    AVNumberOfChannelsKey: @(1),
-                    AVChannelLayoutKey: [NSData dataWithBytes:&acl length:sizeof(acl)]
-                };
+        NSDictionary *audioOutputSettings = @{
+            AVFormatIDKey : @(kAudioFormatMPEG4AAC),
+            AVSampleRateKey : @(44100.0),
+            AVNumberOfChannelsKey : @(1),
+            AVChannelLayoutKey : [NSData dataWithBytes:&acl length:sizeof(acl)]
+        };
 
-                for (AVAssetWriter *videoWriter in self.videoWriters) {
-                    AVAssetWriterInput *audioInput = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeAudio
-                                                                                       outputSettings:audioOutputSettings];
-                    audioInput.expectsMediaDataInRealTime = YES;
+        for (AVAssetWriter *videoWriter in self.videoWriters) {
+            AVAssetWriterInput *audioInput = [AVAssetWriterInput
+                assetWriterInputWithMediaType:AVMediaTypeAudio
+                               outputSettings:audioOutputSettings];
+            audioInput.expectsMediaDataInRealTime = YES;
 
-                    [videoWriter addInput:audioInput];
-                    [self.audioWriterInputs addObject:audioInput];
-                }
-        
+            [videoWriter addInput:audioInput];
+            [self.audioWriterInputs addObject:audioInput];
+        }
     }
 
     return YES;
 }
 
 - (CGAffineTransform)getVideoOrientation {
-  CGAffineTransform transform;
-  
-  switch ([[UIDevice currentDevice] orientation]) {
-    case UIDeviceOrientationLandscapeLeft:
-      transform = CGAffineTransformMakeRotation(-M_PI_2);
-      break;
-    case UIDeviceOrientationLandscapeRight:
-      transform = CGAffineTransformMakeRotation(M_PI_2);
-      break;
-    case UIDeviceOrientationPortraitUpsideDown:
-      transform = CGAffineTransformMakeRotation(M_PI);
-      break;
-    default:
-      transform = CGAffineTransformIdentity;
-      break;
-  }
-  
-  return transform;
+    CGAffineTransform transform;
+
+    switch ([[UIDevice currentDevice] orientation]) {
+        case UIDeviceOrientationLandscapeLeft:
+            transform = CGAffineTransformMakeRotation(-M_PI_2);
+            break;
+        case UIDeviceOrientationLandscapeRight:
+            transform = CGAffineTransformMakeRotation(M_PI_2);
+            break;
+        case UIDeviceOrientationPortraitUpsideDown:
+            transform = CGAffineTransformMakeRotation(M_PI);
+            break;
+        default:
+            transform = CGAffineTransformIdentity;
+            break;
+    }
+
+    return transform;
 }
 
 /// Append audio data to the first video writer
 - (void)newAudioSample:(CMSampleBufferRef)sampleBuffer {
     if (self.videoWriters.count == 0 || self.audioWriterInputs.count == 0) {
-        NSLog(@"No video writers or audio writer inputs available for audio sample.");
+        NSLog(@"No video writers or audio writer inputs available for audio "
+              @"sample.");
         return;
     }
 
@@ -266,7 +298,9 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
         // Check the status of the current video writer
         if (currentVideoWriter.status != AVAssetWriterStatusWriting) {
             if (currentVideoWriter.status == AVAssetWriterStatusFailed) {
-                NSLog(@"Writing video failed for index %lu: %@", (unsigned long)i, currentVideoWriter.error.localizedDescription);
+                NSLog(@"Writing video failed for index %lu: %@",
+                      (unsigned long)i,
+                      currentVideoWriter.error.localizedDescription);
             }
             continue;
         }
@@ -274,124 +308,160 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
         // Append audio sample to the current writer's audio input
         if (currentAudioWriterInput.readyForMoreMediaData) {
             if (![currentAudioWriterInput appendSampleBuffer:sampleBuffer]) {
-                NSLog(@"Failed to append audio sample to writer for index %lu: %@", (unsigned long)i, currentVideoWriter.error.localizedDescription);
+                NSLog(@"Failed to append audio sample to writer for index %lu: "
+                      @"%@",
+                      (unsigned long)i,
+                      currentVideoWriter.error.localizedDescription);
             }
         } else {
-            NSLog(@"Audio writer input not ready for more media data for index %lu.", (unsigned long)i);
+            NSLog(@"Audio writer input not ready for more media data for index "
+                  @"%lu.",
+                  (unsigned long)i);
         }
     }
 }
 /// Adjust time to sync audio & video
-- (CMSampleBufferRef)adjustTime:(CMSampleBufferRef)sample by:(CMTime)offset CF_RETURNS_RETAINED {
-  CMItemCount count;
-  CMSampleBufferGetSampleTimingInfoArray(sample, 0, nil, &count);
-  CMSampleTimingInfo *pInfo = malloc(sizeof(CMSampleTimingInfo) * count);
-  CMSampleBufferGetSampleTimingInfoArray(sample, count, pInfo, &count);
-  for (CMItemCount i = 0; i < count; i++) {
-    pInfo[i].decodeTimeStamp = CMTimeSubtract(pInfo[i].decodeTimeStamp, offset);
-    pInfo[i].presentationTimeStamp = CMTimeSubtract(pInfo[i].presentationTimeStamp, offset);
-  }
-  CMSampleBufferRef sout;
-  CMSampleBufferCreateCopyWithNewTiming(nil, sample, count, pInfo, &sout);
-  free(pInfo);
-  return sout;
+- (CMSampleBufferRef)adjustTime:(CMSampleBufferRef)sample
+                             by:(CMTime)offset CF_RETURNS_RETAINED {
+    CMItemCount count;
+    CMSampleBufferGetSampleTimingInfoArray(sample, 0, nil, &count);
+    CMSampleTimingInfo *pInfo = malloc(sizeof(CMSampleTimingInfo) * count);
+    CMSampleBufferGetSampleTimingInfoArray(sample, count, pInfo, &count);
+    for (CMItemCount i = 0; i < count; i++) {
+        pInfo[i].decodeTimeStamp =
+            CMTimeSubtract(pInfo[i].decodeTimeStamp, offset);
+        pInfo[i].presentationTimeStamp =
+            CMTimeSubtract(pInfo[i].presentationTimeStamp, offset);
+    }
+    CMSampleBufferRef sout;
+    CMSampleBufferCreateCopyWithNewTiming(nil, sample, count, pInfo, &sout);
+    free(pInfo);
+    return sout;
 }
 
 /// Adjust video preview & recording to specified FPS
-- (void)adjustCameraFPS:(NSNumber *)fps ofCaptureDevice: (AVCaptureDevice *) captureDevice {
-  NSArray *frameRateRanges = captureDevice.activeFormat.videoSupportedFrameRateRanges;
-  
-  if (frameRateRanges.count > 0) {
-    AVFrameRateRange *frameRateRange = frameRateRanges.firstObject;
-    NSError *error = nil;
-    
-    if ([captureDevice lockForConfiguration:&error]) {
-      CMTime frameDuration = CMTimeMake(1, [fps intValue]);
-      if (CMTIME_COMPARE_INLINE(frameDuration, <=, frameRateRange.maxFrameDuration) && CMTIME_COMPARE_INLINE(frameDuration, >=, frameRateRange.minFrameDuration)) {
-        captureDevice.activeVideoMinFrameDuration = frameDuration;
-      }
-      [captureDevice unlockForConfiguration];
+- (void)adjustCameraFPS:(NSNumber *)fps
+        ofCaptureDevice:(AVCaptureDevice *)captureDevice {
+    NSArray *frameRateRanges =
+        captureDevice.activeFormat.videoSupportedFrameRateRanges;
+
+    if (frameRateRanges.count > 0) {
+        AVFrameRateRange *frameRateRange = frameRateRanges.firstObject;
+        NSError *error = nil;
+
+        if ([captureDevice lockForConfiguration:&error]) {
+            CMTime frameDuration = CMTimeMake(1, [fps intValue]);
+            if (CMTIME_COMPARE_INLINE(frameDuration, <=,
+                                      frameRateRange.maxFrameDuration) &&
+                CMTIME_COMPARE_INLINE(frameDuration, >=,
+                                      frameRateRange.minFrameDuration)) {
+                captureDevice.activeVideoMinFrameDuration = frameDuration;
+            }
+            [captureDevice unlockForConfiguration];
+        }
     }
-  }
 }
 
-# pragma mark - Camera Delegates
+#pragma mark - Camera Delegates
 - (void)captureOutput:(AVCaptureOutput *)output
- didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
-       fromConnection:(AVCaptureConnection *)connection
- captureVideoOutput:(AVCaptureVideoDataOutput * _Nullable)captureVideoOutput
-                index: (NSUInteger)index {
-    
+    didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer
+           fromConnection:(AVCaptureConnection *)connection
+       captureVideoOutput:
+           (AVCaptureVideoDataOutput *_Nullable)captureVideoOutput
+                    index:(NSUInteger)index {
     if (self.isPaused) {
-            return;
-        }
+        return;
+    }
 
-        if ([_videoWriters count] <= index || [_videoWriterInputs count] <= index) {
-            NSLog(@"Index out of bounds for video writers or inputs.");
-            return;
-        }
+    if ([_videoWriters count] <= index || [_videoWriterInputs count] <= index) {
+        NSLog(@"Index out of bounds for video writers or inputs.");
+        return;
+    }
 
-        AVAssetWriter *currentVideoWriter = self.videoWriters[index];
-        AVAssetWriterInput *currentVideoInput = self.videoWriterInputs[index];
-        AVAssetWriterInputPixelBufferAdaptor *currentVideoAdaptor = self.videoAdaptors[index];
+    AVAssetWriter *currentVideoWriter = self.videoWriters[index];
+    AVAssetWriterInput *currentVideoInput = self.videoWriterInputs[index];
+    AVAssetWriterInputPixelBufferAdaptor *currentVideoAdaptor =
+        self.videoAdaptors[index];
 
-        CFRetain(sampleBuffer);
-        CMTime currentSampleTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
+    CFRetain(sampleBuffer);
+    CMTime currentSampleTime =
+        CMSampleBufferGetPresentationTimeStamp(sampleBuffer);
 
-        // Validate CMTime
-        if (!CMTIME_IS_VALID(currentSampleTime)) {
-            NSLog(@"Invalid sample time for index: %lu", (unsigned long)index);
+    // Validate CMTime
+    if (!CMTIME_IS_VALID(currentSampleTime)) {
+        NSLog(@"Invalid sample time for index: %lu", (unsigned long)index);
+        CFRelease(sampleBuffer);
+        return;
+    }
+
+    // Handle video writer failures
+    if (currentVideoWriter.status == AVAssetWriterStatusFailed) {
+        NSLog(@"Video Writer Error for index %lu: %@", (unsigned long)index,
+              currentVideoWriter.error);
+        CFRelease(sampleBuffer);
+        return;
+    }
+
+    // Start writing if not already started
+    if (currentVideoWriter.status != AVAssetWriterStatusWriting) {
+        [currentVideoWriter startWriting];
+        [currentVideoWriter startSessionAtSourceTime:currentSampleTime];
+    }
+
+    // Handle video output
+    if (output == captureVideoOutput) {
+        if (self.videoIsDisconnected) {
+            self.videoIsDisconnected = NO;
+
+            if (CMTIME_IS_INVALID(self.lastVideoSampleTime)) {
+                _videoTimeOffset =
+                    CMTimeSubtract(currentSampleTime, kCMTimeZero);
+            } else {
+                CMTime offset =
+                    CMTimeSubtract(currentSampleTime, self.lastVideoSampleTime);
+                _videoTimeOffset = CMTimeAdd(self.videoTimeOffset, offset);
+            }
+
             CFRelease(sampleBuffer);
             return;
         }
+        if (self.isSudoPaused) {
+            
+            CVPixelBufferRef frameBuffer = [self getSampleBuffer];
 
-        // Handle video writer failures
-        if (currentVideoWriter.status == AVAssetWriterStatusFailed) {
-            NSLog(@"Video Writer Error for index %lu: %@", (unsigned long)index, currentVideoWriter.error);
-            CFRelease(sampleBuffer);
-            return;
-        }
+            if (frameBuffer) {
+                CMTime nextSampleTime = CMTimeSubtract(currentSampleTime, self.videoTimeOffset);
 
-        // Start writing if not already started
-        if (currentVideoWriter.status != AVAssetWriterStatusWriting) {
-            [currentVideoWriter startWriting];
-            [currentVideoWriter startSessionAtSourceTime:currentSampleTime];
-        }
-
-        // Handle video output
-        if (output == captureVideoOutput) {
-            if (self.videoIsDisconnected) {
-                self.videoIsDisconnected = NO;
-
-                if (CMTIME_IS_INVALID(self.lastVideoSampleTime)) {
-                    _videoTimeOffset = CMTimeSubtract(currentSampleTime, kCMTimeZero);
-                } else {
-                    CMTime offset = CMTimeSubtract(currentSampleTime, self.lastVideoSampleTime);
-                    _videoTimeOffset = CMTimeAdd(self.videoTimeOffset, offset);
+                if (currentVideoInput.isReadyForMoreMediaData) {
+                    [currentVideoAdaptor appendPixelBuffer:frameBuffer withPresentationTime:nextSampleTime];
                 }
 
-                CFRelease(sampleBuffer);
-                return;
+                CVPixelBufferRelease(frameBuffer);
             }
 
-            _lastVideoSampleTime = currentSampleTime;
+            CFRelease(sampleBuffer);
+            return;
+        }
+        _lastVideoSampleTime = currentSampleTime;
 
-            CVPixelBufferRef nextBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
-            CMTime nextSampleTime = CMTimeSubtract(currentSampleTime, self.videoTimeOffset);
+        CVPixelBufferRef nextBuffer =
+            CMSampleBufferGetImageBuffer(sampleBuffer);
+        CMTime nextSampleTime =
+            CMTimeSubtract(currentSampleTime, self.videoTimeOffset);
 
-            if (!CMTIME_IS_VALID(nextSampleTime)) {
-                NSLog(@"Invalid nextSampleTime, skipping frame.");
-                CFRelease(sampleBuffer);
-                return;
-            }
+        if (!CMTIME_IS_VALID(nextSampleTime)) {
+            NSLog(@"Invalid nextSampleTime, skipping frame.");
+            CFRelease(sampleBuffer);
+            return;
+        }
 
-            if (currentVideoInput.isReadyForMoreMediaData) {
-                [currentVideoAdaptor appendPixelBuffer:nextBuffer withPresentationTime:nextSampleTime];
-            } else {
-                NSLog(@"Video Input not ready.");
-            }
+        if (currentVideoInput.isReadyForMoreMediaData) {
+            [currentVideoAdaptor appendPixelBuffer:nextBuffer
+                              withPresentationTime:nextSampleTime];
+        } else {
+            NSLog(@"Video Input not ready.");
+        }
 
-        
     } else {
         // Handle audio output
         CMTime duration = CMSampleBufferGetDuration(sampleBuffer);
@@ -404,9 +474,11 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
             self.audioIsDisconnected = NO;
 
             if (self.audioTimeOffset.value == 0) {
-                self.audioTimeOffset = CMTimeSubtract(currentSampleTime, self.lastAudioSampleTime);
+                self.audioTimeOffset =
+                    CMTimeSubtract(currentSampleTime, self.lastAudioSampleTime);
             } else {
-                CMTime offset = CMTimeSubtract(currentSampleTime, self.lastAudioSampleTime);
+                CMTime offset =
+                    CMTimeSubtract(currentSampleTime, self.lastAudioSampleTime);
                 self.audioTimeOffset = CMTimeAdd(self.audioTimeOffset, offset);
             }
 
@@ -418,140 +490,301 @@ FourCharCode const videoFormat = kCVPixelFormatType_32BGRA;
 
         if (self.audioTimeOffset.value != 0) {
             CFRelease(sampleBuffer);
-            sampleBuffer = [self adjustTime:sampleBuffer by:self.audioTimeOffset];
+            sampleBuffer = [self adjustTime:sampleBuffer
+                                         by:self.audioTimeOffset];
         }
+        if (self.isSudoPaused) {
+            NSLog(@"Injecting silent audio due to pause.");
 
+            // Generate a silent audio buffer
+            CMSampleBufferRef silentBuffer =
+                [self createSilentAudioBuffer:sampleBuffer];
+            if (silentBuffer) {
+                [self newAudioSample:silentBuffer];
+                CFRelease(silentBuffer);
+            }
+
+            CFRelease(sampleBuffer);
+            return;
+        }
         [self newAudioSample:sampleBuffer];
     }
 
     CFRelease(sampleBuffer);
 }
-
-
-
-
-# pragma mark - Settings converters
-
-- (AVFileType)getBestFileTypeAccordingOptions:(CupertinoVideoOptions *)options {
-  AVFileType fileType = AVFileTypeQuickTimeMovie;
-  
-  if (options && options != (id)[NSNull null]) {
-    CupertinoFileType type = options.fileType;
-    switch (type) {
-      case CupertinoFileTypeQuickTimeMovie:
-        fileType = AVFileTypeQuickTimeMovie;
-        break;
-      case CupertinoFileTypeMpeg4:
-        fileType = AVFileTypeMPEG4;
-        break;
-      case CupertinoFileTypeAppleM4V:
-        fileType = AVFileTypeAppleM4V;
-        break;
-      case CupertinoFileTypeType3GPP:
-        fileType = AVFileType3GPP;
-        break;
-      case CupertinoFileTypeType3GPP2:
-        fileType = AVFileType3GPP2;
-        break;
-      default:
-        break;
+- (CVPixelBufferRef) getSampleBuffer {
+    
+    CVPixelBufferRef frameBuffer = NULL;
+    
+    if (self.placeholderImage != NULL) {
+        // Convert image to pixel buffer
+        frameBuffer = [self pixelBufferFromImage:self.placeholderImage];
     }
-  }
-  
-  return fileType;
+    
+    if (!frameBuffer) {
+        // Fallback to black frame if image is not available
+        frameBuffer = [self blackPixelBufferWithSize:_previewSize];
+    }
+    
+    return frameBuffer;
 }
 
-- (AVVideoCodecType)getBestCodecTypeAccordingOptions:(CupertinoVideoOptions *)options {
-  AVVideoCodecType codecType = AVVideoCodecTypeH264;
-  if (options && options != (id)[NSNull null]) {
-    CupertinoCodecType codec = options.codec;
-    switch (codec) {
-      case CupertinoCodecTypeH264:
-        codecType = AVVideoCodecTypeH264;
-        break;
-      case CupertinoCodecTypeHevc:
-        codecType = AVVideoCodecTypeHEVC;
-        break;
-      case CupertinoCodecTypeHevcWithAlpha:
-        codecType = AVVideoCodecTypeHEVCWithAlpha;
-        break;
-      case CupertinoCodecTypeJpeg:
-        codecType = AVVideoCodecTypeJPEG;
-        break;
-      case CupertinoCodecTypeAppleProRes4444:
-        codecType = AVVideoCodecTypeAppleProRes4444;
-        break;
-      case CupertinoCodecTypeAppleProRes422:
-        codecType = AVVideoCodecTypeAppleProRes422;
-        break;
-      case CupertinoCodecTypeAppleProRes422HQ:
-        codecType = AVVideoCodecTypeAppleProRes422HQ;
-        break;
-      case CupertinoCodecTypeAppleProRes422LT:
-        codecType = AVVideoCodecTypeAppleProRes422LT;
-        break;
-      case CupertinoCodecTypeAppleProRes422Proxy:
-        codecType = AVVideoCodecTypeAppleProRes422Proxy;
-        break;
-      default:
-        break;
+- (CVPixelBufferRef)blackPixelBufferWithSize:(CGSize)size {
+    NSDictionary *options = @{(NSString*)kCVPixelBufferCGImageCompatibilityKey: @YES,
+                              (NSString*)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
+
+    CVPixelBufferRef pxbuffer = NULL;
+    CVPixelBufferCreate(kCFAllocatorDefault, size.width, size.height,
+                        kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)options, &pxbuffer);
+
+    CVPixelBufferLockBaseAddress(pxbuffer, 0);
+    void *pxdata = CVPixelBufferGetBaseAddress(pxbuffer);
+
+    memset(pxdata, 0, CVPixelBufferGetHeight(pxbuffer) * CVPixelBufferGetBytesPerRow(pxbuffer));
+
+    CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+    return pxbuffer;
+}
+
+- (void)setupPixelBufferPoolWithSize:(CGSize)size {
+    NSDictionary *pixelBufferAttributes = @{
+        (NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+        (NSString *)kCVPixelBufferWidthKey: @(size.width),
+        (NSString *)kCVPixelBufferHeightKey: @(size.height),
+        (NSString *)kCVPixelBufferCGImageCompatibilityKey: @YES,
+        (NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES
+    };
+
+    if (_pixelBufferPool) {
+        CVPixelBufferPoolRelease(_pixelBufferPool);
     }
-  }
-  return codecType;
+    
+    CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL, (__bridge CFDictionaryRef)pixelBufferAttributes, &_pixelBufferPool);
+}
+
+- (CVPixelBufferRef)pixelBufferFromImage:(UIImage *)image {
+    CGImageRef imageRef = image.CGImage;
+    CGSize imageSize = CGSizeMake(CGImageGetWidth(imageRef), CGImageGetHeight(imageRef));
+
+    // Define Pixel Buffer Attributes
+    NSDictionary *options = @{(NSString*)kCVPixelBufferCGImageCompatibilityKey: @YES,
+                              (NSString*)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES};
+
+    CVPixelBufferRef pxbuffer = NULL;
+    CVReturn status = CVPixelBufferCreate(kCFAllocatorDefault,
+                                          imageSize.width, imageSize.height,
+                                          kCVPixelFormatType_32BGRA,
+                                          (__bridge CFDictionaryRef)options, &pxbuffer);
+    
+    if (status != kCVReturnSuccess) {
+        NSLog(@"Error: Failed to create pixel buffer.");
+        return NULL;
+    }
+
+    // Lock Pixel Buffer for Writing
+    CVPixelBufferLockBaseAddress(pxbuffer, 0);
+    void *pxdata = CVPixelBufferGetBaseAddress(pxbuffer);
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pxbuffer);
+
+    // Create vImage Buffers for Conversion
+    vImage_Buffer destBuffer;
+    destBuffer.data = pxdata;
+    destBuffer.width = imageSize.width;
+    destBuffer.height = imageSize.height;
+    destBuffer.rowBytes = bytesPerRow;
+
+    // Convert Image to vImage_Buffer
+    vImage_Buffer srcBuffer;
+    vImage_CGImageFormat format = {
+        .bitsPerComponent = 8,
+        .bitsPerPixel = 32,
+        .colorSpace = NULL,
+        .bitmapInfo = kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little,
+        .version = 0,
+        .decode = NULL,
+        .renderingIntent = kCGRenderingIntentDefault
+    };
+
+    vImage_Error error = vImageBuffer_InitWithCGImage(&srcBuffer, &format, NULL, imageRef, kvImageNoFlags);
+    if (error != kvImageNoError) {
+        NSLog(@"Error: Failed to create vImage buffer.");
+        CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+        return NULL;
+    }
+
+    // Copy vImage Buffer to Pixel Buffer
+    vImage_Error convError = vImageScale_ARGB8888(&srcBuffer, &destBuffer, NULL, kvImageNoFlags);
+    if (convError != kvImageNoError) {
+        NSLog(@"Error: Failed to convert image to pixel buffer.");
+        CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+        return NULL;
+    }
+
+    // Unlock Pixel Buffer
+    CVPixelBufferUnlockBaseAddress(pxbuffer, 0);
+
+    // Cleanup
+    free(srcBuffer.data);
+
+    return pxbuffer;
+}
+
+- (CMSampleBufferRef)createSilentAudioBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMBlockBufferRef audioBlockBuffer;
+    AudioBufferList audioBufferList;
+
+    if (CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer, NULL, &audioBufferList, sizeof(audioBufferList), NULL,
+            NULL, kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            &audioBlockBuffer) != noErr) {
+        return NULL;
+    }
+
+    // Zero out the audio buffer (silence)
+    for (UInt32 i = 0; i < audioBufferList.mNumberBuffers; i++) {
+        memset(audioBufferList.mBuffers[i].mData, 0,
+               audioBufferList.mBuffers[i].mDataByteSize);
+    }
+
+    // Create new sample buffer with silent audio
+    CMSampleBufferRef silentSampleBuffer;
+    CMSampleBufferCreateCopy(kCFAllocatorDefault, sampleBuffer,
+                             &silentSampleBuffer);
+
+    CFRelease(audioBlockBuffer);
+    return silentSampleBuffer;
+}
+
+#pragma mark - Settings converters
+
+- (AVFileType)getBestFileTypeAccordingOptions:(CupertinoVideoOptions *)options {
+    AVFileType fileType = AVFileTypeQuickTimeMovie;
+
+    if (options && options != (id)[NSNull null]) {
+        CupertinoFileType type = options.fileType;
+        switch (type) {
+            case CupertinoFileTypeQuickTimeMovie:
+                fileType = AVFileTypeQuickTimeMovie;
+                break;
+            case CupertinoFileTypeMpeg4:
+                fileType = AVFileTypeMPEG4;
+                break;
+            case CupertinoFileTypeAppleM4V:
+                fileType = AVFileTypeAppleM4V;
+                break;
+            case CupertinoFileTypeType3GPP:
+                fileType = AVFileType3GPP;
+                break;
+            case CupertinoFileTypeType3GPP2:
+                fileType = AVFileType3GPP2;
+                break;
+            default:
+                break;
+        }
+    }
+
+    return fileType;
+}
+
+- (AVVideoCodecType)getBestCodecTypeAccordingOptions:
+    (CupertinoVideoOptions *)options {
+    AVVideoCodecType codecType = AVVideoCodecTypeH264;
+    if (options && options != (id)[NSNull null]) {
+        CupertinoCodecType codec = options.codec;
+        switch (codec) {
+            case CupertinoCodecTypeH264:
+                codecType = AVVideoCodecTypeH264;
+                break;
+            case CupertinoCodecTypeHevc:
+                codecType = AVVideoCodecTypeHEVC;
+                break;
+            case CupertinoCodecTypeHevcWithAlpha:
+                codecType = AVVideoCodecTypeHEVCWithAlpha;
+                break;
+            case CupertinoCodecTypeJpeg:
+                codecType = AVVideoCodecTypeJPEG;
+                break;
+            case CupertinoCodecTypeAppleProRes4444:
+                codecType = AVVideoCodecTypeAppleProRes4444;
+                break;
+            case CupertinoCodecTypeAppleProRes422:
+                codecType = AVVideoCodecTypeAppleProRes422;
+                break;
+            case CupertinoCodecTypeAppleProRes422HQ:
+                codecType = AVVideoCodecTypeAppleProRes422HQ;
+                break;
+            case CupertinoCodecTypeAppleProRes422LT:
+                codecType = AVVideoCodecTypeAppleProRes422LT;
+                break;
+            case CupertinoCodecTypeAppleProRes422Proxy:
+                codecType = AVVideoCodecTypeAppleProRes422Proxy;
+                break;
+            default:
+                break;
+        }
+    }
+    return codecType;
 }
 
 - (CGSize)getBestVideoSizeAccordingQuality:(VideoRecordingQuality)quality {
-  CGSize size;
-  switch (quality) {
-    case VideoRecordingQualityUhd:
-    case VideoRecordingQualityHighest:
-      if (@available(iOS 9.0, *)) {
-          if ([_captureDevices.firstObject supportsAVCaptureSessionPreset:AVCaptureSessionPreset3840x2160]) {
-          size = CGSizeMake(3840, 2160);
-        } else {
-          size = CGSizeMake(1920, 1080);
-        }
-      } else {
-        return CGSizeMake(1920, 1080);
-      }
-      break;
-    case VideoRecordingQualityFhd:
-      size = CGSizeMake(1920, 1080);
-      break;
-    case VideoRecordingQualityHd:
-      size = CGSizeMake(1280, 720);
-      break;
-    case VideoRecordingQualitySd:
-    case VideoRecordingQualityLowest:
-      size = CGSizeMake(960, 540);
-      break;
-  }
-    
-  // ensure video output size does not exceed capture session size
-  if (size.width > _previewSize.width) {
-    size = _previewSize;
-  }
-  
-  return size;
+    CGSize size;
+    switch (quality) {
+        case VideoRecordingQualityUhd:
+        case VideoRecordingQualityHighest:
+            if (@available(iOS 9.0, *)) {
+                if ([_captureDevices.firstObject
+                        supportsAVCaptureSessionPreset:
+                            AVCaptureSessionPreset3840x2160]) {
+                    size = CGSizeMake(3840, 2160);
+                } else {
+                    size = CGSizeMake(1920, 1080);
+                }
+            } else {
+                return CGSizeMake(1920, 1080);
+            }
+            break;
+        case VideoRecordingQualityFhd:
+            size = CGSizeMake(1920, 1080);
+            break;
+        case VideoRecordingQualityHd:
+            size = CGSizeMake(1280, 720);
+            break;
+        case VideoRecordingQualitySd:
+        case VideoRecordingQualityLowest:
+            size = CGSizeMake(960, 540);
+            break;
+    }
+
+    // ensure video output size does not exceed capture session size
+    if (size.width > _previewSize.width) {
+        size = _previewSize;
+    }
+
+    return size;
 }
 
-# pragma mark - Setter
+#pragma mark - Setter
 - (void)setVideoIsDisconnected:(bool)isVideoDisconnected {
     _videoIsDisconnected = isVideoDisconnected;
 }
 - (void)setIsAudioEnabled:(bool)isAudioEnabled {
-  _isAudioEnabled = isAudioEnabled;
+    _isAudioEnabled = isAudioEnabled;
 }
 - (void)setIsAudioSetup:(bool)isAudioSetup {
-  _isAudioSetup = isAudioSetup;
+    _isAudioSetup = isAudioSetup;
 }
 
 - (void)setPreviewSize:(CGSize)previewSize {
-  _previewSize = previewSize;
+    _previewSize = previewSize;
 }
 
 - (void)setAudioIsDisconnected:(bool)audioIsDisconnected {
-  _audioIsDisconnected = audioIsDisconnected;
+    _audioIsDisconnected = audioIsDisconnected;
 }
-
+- (void)dealloc {
+    if (_pixelBufferPool) {
+        CVPixelBufferPoolRelease(_pixelBufferPool);
+        _pixelBufferPool = NULL;
+    }
+}
 @end

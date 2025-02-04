@@ -51,7 +51,8 @@ AVCaptureAudioDataOutputSampleBufferDelegate>
 @property(readonly, nonatomic) AVCaptureVideoDataOutput *captureVideoOutput;
 - (void)pauseVideoRecording;
 - (void)resumeVideoRecording;
-
+- (void)sudoPauseVideoRecording:(UIImage * _Nullable)image;
+- (void)resumePseudoPausedVideoRecording;
 - (instancetype)initWithSensors:(NSArray<PigeonSensor *> *)sensors
                    videoOptions:(nullable CupertinoVideoOptions *)videoOptions
               mirrorFrontCamera:(BOOL)mirrorFrontCamera

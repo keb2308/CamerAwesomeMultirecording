@@ -343,8 +343,23 @@ FlutterEventSink physicalButtonEventSink;
   } else {
       [self.camera pauseVideoRecording];
   }
-  
-  
+}
+
+- (void)pseudoPauseVideoRecordingImageData:(FlutterStandardTypedData *)imageData error:(FlutterError * _Nullable __autoreleasing *)error {
+    if (self.camera == nil && self.multiCamera == nil) {
+      *error = [FlutterError errorWithCode:@"CAMERA_MUST_BE_INIT" message:@"init must be call before start" details:nil];
+      return;
+    }
+    UIImage *image = nil;
+    if (imageData) {
+        image = [UIImage imageWithData:imageData.data];
+    }
+    
+    if (self.multiCamera != nil) {
+        [self.multiCamera sudoPauseVideoRecording:image];
+    } else {
+        [self.camera sudoPauseVideoRecording:image];
+    }
 }
 
 - (void)recordVideoSensors:(nonnull NSArray<PigeonSensor *> *)sensors paths:(nonnull NSArray<NSString *> *)paths completion:(nonnull void (^)(FlutterError * _Nullable))completion {
@@ -384,8 +399,19 @@ FlutterEventSink physicalButtonEventSink;
     } else {
         [self.camera resumeVideoRecording];
     }
+}
+
+- (void)resumePseudoPausedVideoRecordingWithError:(FlutterError * _Nullable __autoreleasing * _Nonnull)error {
+  if (self.camera == nil && self.multiCamera == nil) {
+    *error = [FlutterError errorWithCode:@"CAMERA_MUST_BE_INIT" message:@"init must be call before start" details:nil];
+    return;
+  }
   
-  
+    if (self.multiCamera != nil) {
+        [self.multiCamera resumePseudoPausedVideoRecording];
+    } else {
+        [self.camera resumePseudoPausedVideoRecording];
+    }
 }
 
 - (void)setRecordingAudioModeEnableAudio:(NSNumber *)enableAudio completion:(void(^)(NSNumber *_Nullable, FlutterError *_Nullable))completion {

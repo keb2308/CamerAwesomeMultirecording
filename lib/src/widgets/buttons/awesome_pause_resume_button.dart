@@ -44,7 +44,8 @@ class _AwesomePauseResumeButtonState extends State<AwesomePauseResumeButton>
           return const SizedBox(width: 48);
         }
 
-        bool recordingPaused = snapshot.data!.videoState == VideoState.paused;
+        bool recordingPaused =
+            snapshot.data!.videoState == VideoState.pseudoPaused;
         final theme = widget.theme ?? AwesomeThemeProvider.of(context).theme;
 
         return AwesomeOrientedWidget(
@@ -64,10 +65,10 @@ class _AwesomePauseResumeButtonState extends State<AwesomePauseResumeButton>
             () {
               if (recordingPaused) {
                 _controller.reverse();
-                widget.state.resumeRecording(snapshot.data!);
+                widget.state.resumePseudoPausedVideoRecording(snapshot.data!);
               } else {
                 _controller.forward();
-                widget.state.pauseRecording(snapshot.data!);
+                widget.state.pseudoPauseRecording(snapshot.data!);
               }
             },
           ),

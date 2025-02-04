@@ -86,6 +86,8 @@ AVCaptureAudioDataOutputSampleBufferDelegate>
 - (void)setRecordingAudioMode:(bool)enableAudio completion:(void(^)(NSNumber *_Nullable, FlutterError *_Nullable))completion;
 - (void)pauseVideoRecording;
 - (void)resumeVideoRecording;
+- (void)sudoPauseVideoRecording:(UIImage * _Nullable)image;
+- (void)resumePseudoPausedVideoRecording;
 - (void)receivedImageFromStream;
 - (void)setAspectRatio:(AspectRatio)ratio;
 - (void)setExifPreferencesGPSLocation:(bool)gpsLocation completion:(void(^)(NSNumber *_Nullable, FlutterError *_Nullable))completion;
