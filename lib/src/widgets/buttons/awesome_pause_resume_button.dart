@@ -5,6 +5,7 @@ import 'package:camerawesome/src/orchestrator/models/media_capture.dart';
 import 'package:camerawesome/src/orchestrator/states/video_camera_recording_state.dart';
 import 'package:camerawesome/src/widgets/utils/awesome_oriented_widget.dart';
 import 'package:camerawesome/src/widgets/utils/awesome_theme.dart';
+import 'package:flutter/services.dart';
 
 class AwesomePauseResumeButton extends StatefulWidget {
   final VideoRecordingCameraState state;
@@ -62,13 +63,16 @@ class _AwesomePauseResumeButtonState extends State<AwesomePauseResumeButton>
                 ),
               ),
             ),
-            () {
+            () async {
               if (recordingPaused) {
                 _controller.reverse();
                 widget.state.resumePseudoPausedVideoRecording(snapshot.data!);
               } else {
                 _controller.forward();
-                widget.state.pseudoPauseRecording(snapshot.data!);
+                ByteData data =
+                    await rootBundle.load('assets/place_holder.png');
+                Uint8List imageBytes = data.buffer.asUint8List();
+                widget.state.pseudoPauseRecording(snapshot.data!, imageBytes);
               }
             },
           ),

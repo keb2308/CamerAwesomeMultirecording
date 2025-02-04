@@ -1,8 +1,10 @@
+import 'dart:typed_data';
+import 'dart:ui';
+
 import 'package:camerawesome/camerawesome_plugin.dart';
 import 'package:camerawesome/pigeon.dart';
 import 'package:camerawesome/src/logger.dart';
 import 'package:camerawesome/src/orchestrator/camera_context.dart';
-import 'package:flutter/services.dart';
 
 /// Callback to get the CaptureRequest after the video has been taken
 typedef OnVideoCallback = Function(CaptureRequest request);
@@ -38,7 +40,8 @@ class VideoRecordingCameraState extends CameraState {
   /// Pauses a video recording.
   /// [startRecording] must have been called before.
   /// Call [resumePseudoPausedVideoRecording] to resume the capture.
-  Future<void> pseudoPauseRecording(MediaCapture currentCapture) async {
+  Future<void> pseudoPauseRecording(
+      MediaCapture currentCapture, Uint8List placeHolderImage) async {
     if (!currentCapture.isVideo) {
       throw "Trying to pause a video while currentCapture is not a video (${currentCapture.captureRequest.when(
         single: (single) => single.file!.path,
@@ -48,13 +51,10 @@ class VideoRecordingCameraState extends CameraState {
     if (currentCapture.status != MediaCaptureStatus.capturing) {
       throw "Trying to pause a media capture in status ${currentCapture.status} instead of ${MediaCaptureStatus.capturing}";
     }
-    ByteData data = await rootBundle.load('assets/place_holder.png');
-    Uint8List imageBytes = data.buffer.asUint8List();
-    await CamerawesomePlugin.pseudoPauseVideoRecording(imageBytes);
+    await CamerawesomePlugin.pseudoPauseVideoRecording(placeHolderImage);
     _mediaCapture = MediaCapture.capturing(
         captureRequest: currentCapture.captureRequest,
         videoState: VideoState.pseudoPaused);
-    cameraContext.changeState(VideoCameraState.from(cameraContext));
   }
 
   /// Resumes a video recording.
@@ -75,7 +75,6 @@ class VideoRecordingCameraState extends CameraState {
       captureRequest: currentCapture.captureRequest,
       videoState: VideoState.resumed,
     );
-    cameraContext.changeState(VideoCameraState.from(cameraContext));
   }
 
   /// Pauses a video recording.
