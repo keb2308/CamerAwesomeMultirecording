@@ -21,7 +21,7 @@ class CameraAwesomeApp extends StatelessWidget {
       onGenerateRoute: (settings) {
         if (settings.name == '/') {
           return MaterialPageRoute(
-            builder: (context) => const CameraPage(),
+            builder: (context) => const MainPage(),
           );
         } else if (settings.name == '/gallery') {
           final multipleCaptureRequest =
@@ -34,6 +34,70 @@ class CameraAwesomeApp extends StatelessWidget {
         }
         return null;
       },
+    );
+  }
+}
+
+class MainPage extends StatefulWidget {
+  const MainPage({super.key});
+
+  @override
+  State<MainPage> createState() => _MainPageState();
+}
+
+class _MainPageState extends State<MainPage> {
+  bool isMulti = true;
+  bool isBack = true;
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: [
+          const SizedBox(height: 40),
+          Row(
+            children: [
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    isMulti = true;
+                  });
+                },
+                child: const Text('Both Camera'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    isMulti = false;
+                    isBack = false;
+                  });
+                },
+                child: const Text('Front Camera'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    isMulti = false;
+                    isBack = true;
+                  });
+                },
+                child: const Text('Back Camera'),
+              ),
+            ],
+          ),
+          Expanded(
+              child: isMulti
+                  ? const CameraPage()
+                  : CameraPageSingle(
+                      isBack: isBack,
+                    ))
+        ],
+      ),
     );
   }
 }
@@ -185,6 +249,218 @@ class _CameraPageState extends State<CameraPage> {
                         },
                       ),
                     ],
+                  );
+                },
+              )
+            : const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
+class CameraPage2 extends StatefulWidget {
+  const CameraPage2({super.key});
+
+  @override
+  State<CameraPage2> createState() => _CameraPageState2();
+}
+
+class _CameraPageState2 extends State<CameraPage2> {
+  SensorDeviceData? sensorDeviceData;
+  bool? isMultiCamSupported;
+  PipShape shape = PipShape.circle;
+
+  @override
+  void initState() {
+    super.initState();
+
+    CamerawesomePlugin.getSensors().then((value) {
+      setState(() {
+        sensorDeviceData = value;
+      });
+    });
+
+    CamerawesomePlugin.isMultiCamSupported().then((value) {
+      setState(() {
+        debugPrint("📸 isMultiCamSupported: $value");
+        isMultiCamSupported = value;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    return Scaffold(
+      body: Container(
+        color: Colors.white,
+        child: sensorDeviceData != null && isMultiCamSupported != null
+            ? CameraAwesomeBuilder.awesome(
+                saveConfig: SaveConfig.photoAndVideo(
+                    // initialCaptureMode: CaptureMode.video,
+                    ),
+                sensorConfig: isMultiCamSupported == true
+                    ? SensorConfig.multiple(
+                        sensors: (Platform.isIOS)
+                            ? [
+                                Sensor.type(SensorType.wideAngle),
+                                Sensor.position(SensorPosition.front),
+                              ]
+                            : [
+                                Sensor.position(SensorPosition.back),
+                                Sensor.position(SensorPosition.front),
+                              ],
+                        flashMode: FlashMode.auto,
+                        aspectRatio: CameraAspectRatios.ratio_16_9,
+                      )
+                    : SensorConfig.single(
+                        sensor: Sensor.position(SensorPosition.back),
+                        flashMode: FlashMode.auto,
+                        aspectRatio: CameraAspectRatios.ratio_16_9,
+                      ),
+                // TODO: create factory for multi cam & single
+                // sensors: sensorDeviceData!.availableSensors
+                //     .map((e) => Sensor.id(e.uid))
+                //     .toList(),
+                previewFit: CameraPreviewFit.fitWidth,
+                onMediaTap: (mediaCapture) {
+                  mediaCapture.captureRequest.when(
+                    single: (single) => single.file?.open(),
+                    multiple: (multiple) => Navigator.of(context).pushNamed(
+                      '/gallery',
+                      arguments: multiple,
+                    ),
+                  );
+                },
+                pictureInPictureConfigBuilder: (index, sensor) {
+                  const width = 300.0;
+                  return PictureInPictureConfig(
+                    isDraggable: true,
+                    startingPosition: Offset(
+                      -50,
+                      screenSize.height - 420,
+                    ),
+                    onTap: () {
+                      debugPrint('on preview tap');
+                    },
+                    sensor: sensor,
+                    pictureInPictureBuilder: (preview, aspectRatio) {
+                      return SizedBox(
+                        width: width,
+                        height: width,
+                        child: ClipPath(
+                          clipper: _MyCustomPipClipper(
+                            width: width,
+                            height: width * aspectRatio,
+                            shape: shape,
+                          ),
+                          child: SizedBox(
+                            width: width,
+                            child: preview,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+                previewDecoratorBuilder: (state, _) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        color: Colors.white70,
+                        margin: const EdgeInsets.only(left: 8),
+                        child: const Text("Change picture in picture's shape:"),
+                      ),
+                      GridView.builder(
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          childAspectRatio: 16 / 9,
+                        ),
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        itemCount: PipShape.values.length,
+                        itemBuilder: (context, index) {
+                          final shape = PipShape.values[index];
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                this.shape = shape;
+                              });
+                            },
+                            child: Container(
+                              color: Colors.red.withOpacity(0.5),
+                              margin: const EdgeInsets.all(8.0),
+                              child: Center(
+                                child: Text(
+                                  shape.name,
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  );
+                },
+              )
+            : const SizedBox.shrink(),
+      ),
+    );
+  }
+}
+
+class CameraPageSingle extends StatefulWidget {
+  final bool isBack;
+  const CameraPageSingle({super.key, required this.isBack});
+
+  @override
+  State<CameraPageSingle> createState() => _CameraPageSingleState();
+}
+
+class _CameraPageSingleState extends State<CameraPageSingle> {
+  SensorDeviceData? sensorDeviceData;
+
+  @override
+  void initState() {
+    super.initState();
+
+    CamerawesomePlugin.getSensors().then((value) {
+      setState(() {
+        sensorDeviceData = value;
+      });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        color: Colors.white,
+        child: sensorDeviceData != null
+            ? CameraAwesomeBuilder.awesome(
+                saveConfig: SaveConfig.photoAndVideo(
+                    // initialCaptureMode: CaptureMode.video,
+                    ),
+                sensorConfig: SensorConfig.single(
+                  sensor: Sensor.position(widget.isBack
+                      ? SensorPosition.back
+                      : SensorPosition.front),
+                  flashMode: FlashMode.auto,
+                  aspectRatio: CameraAspectRatios.ratio_16_9,
+                ),
+                previewFit: CameraPreviewFit.fitWidth,
+                onMediaTap: (mediaCapture) {
+                  mediaCapture.captureRequest.when(
+                    single: (single) => single.file?.open(),
+                    multiple: (multiple) => Navigator.of(context).pushNamed(
+                      '/gallery',
+                      arguments: multiple,
+                    ),
                   );
                 },
               )

@@ -42,13 +42,14 @@ AVCaptureAudioDataOutputSampleBufferDelegate>
 @property(readonly, nonatomic) bool mirrorFrontCamera;
 @property(nonatomic, nonatomic) NSMutableArray<CameraPreviewTexture *> *textures;
 @property(nonatomic, copy) void (^onPreviewFrameAvailable)(NSNumber * _Nullable);
-@property (nonatomic, strong) NSMutableArray<AVCaptureMovieFileOutput *> *movieFileOutputs;
 @property (nonatomic, strong) AVCaptureAudioDataOutput *audioOutput;
 @property (nonatomic, strong) AVCaptureDeviceInput *audioInput;
 @property(readonly, nonatomic) CaptureModes captureMode;
 @property(readonly, nonatomic) CupertinoVideoOptions *videoOptions;
 @property(readonly, nonatomic) UIDeviceOrientation deviceOrientation;
-@property(readonly, nonatomic) AVCaptureVideoDataOutput *captureVideoOutput;
+@property (nonatomic, strong) NSMutableArray<AVCaptureVideoDataOutput *> *captureVideoOutputs;
+@property (nonatomic, strong) NSMutableArray<AVCaptureDeviceInput *> *captureVideoInputs;
+@property (nonatomic, strong) NSMutableArray<AVCaptureConnection *> *captureConnections;
 - (void)pauseVideoRecording;
 - (void)resumeVideoRecording;
 - (void)sudoPauseVideoRecording:(UIImage * _Nullable)image;
