@@ -562,6 +562,14 @@ class CameraAwesomeX : CameraInterface, FlutterPlugin, ActivityAware {
         cameraState.recordings?.forEach { it.resume() }
     }
 
+    override fun pseudoPauseVideoRecording(imageData: ByteArray?) {
+        TODO("Not yet implemented")
+    }
+
+    override fun resumePseudoPausedVideoRecording() {
+        TODO("Not yet implemented")
+    }
+
     override fun receivedImageFromStream() {
         cameraState.imageAnalysisBuilder?.lastFrameAnalysisFinished()
     }
