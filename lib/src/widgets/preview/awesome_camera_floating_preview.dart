@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:camerawesome/pigeon.dart';
 import 'package:camerawesome/src/orchestrator/models/sensors.dart';
 import 'package:camerawesome/src/widgets/preview/awesome_preview_fit.dart';
@@ -18,16 +20,13 @@ class AwesomeCameraFloatingPreview extends StatefulWidget {
     required this.texture,
     required this.aspectRatio,
     PictureInPictureConfig? pictureInPictureConfig,
-  }) : pictureInPictureConfig =
-            pictureInPictureConfig ?? PictureInPictureConfig(sensor: sensor);
+  }) : pictureInPictureConfig = pictureInPictureConfig ?? PictureInPictureConfig(sensor: sensor);
 
   @override
-  State<AwesomeCameraFloatingPreview> createState() =>
-      _AwesomeCameraFloatingPreviewState();
+  State<AwesomeCameraFloatingPreview> createState() => _AwesomeCameraFloatingPreviewState();
 }
 
-class _AwesomeCameraFloatingPreviewState
-    extends State<AwesomeCameraFloatingPreview> {
+class _AwesomeCameraFloatingPreviewState extends State<AwesomeCameraFloatingPreview> {
   late Offset _position;
 
   @override
@@ -63,7 +62,7 @@ class _AwesomeCameraFloatingPreviewState
                 previewFit: CameraPreviewFit.cover,
                 previewSize: PreviewSize(
                   width: 1000,
-                  height: 1000 / widget.aspectRatio,
+                  height: Platform.isIOS ? 1000 * 16 / 9 : 1000 / widget.aspectRatio,
                 ), // FIXME  we don't know preview size of other sensors
                 constraints: BoxConstraints(
                   maxWidth: width,
