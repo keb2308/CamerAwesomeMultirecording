@@ -1,6 +1,14 @@
-# 2.1.O
-- Update for flutter 3.24.0
-- Update dependencies (Thank you @tonistayhungrystayfoolish / @bytemaster / @millerf for the PR) 
+# 2.5.0
+- Fix iOS camera zoom change crash (thanks @haf and @chaosue) 
+- Fix camera preview not accurate with the result photo
+
+# 2.4.0
+
+- upgrade cameraX to 1.4.2 (thanks @fabricio-sisplan)
+- upgrade dependencies
+- preview fit is now contain by default
+- Allow simultaneous video recording and image analysis (thanks @haf Henrik Feldt)
+- Fix: conflict name between Preview from cameraawesome and a new class preview from flutter (thanks @juarezfranco Juarez Franco)
 
 # 2.0.1
 

@@ -60,7 +60,7 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
   StreamSubscription? _aspectRatioSubscription;
   CameraAspectRatios? _aspectRatio;
   double? _aspectRatioValue;
-  Preview? _preview;
+  AnalysisPreview? _preview;
 
   // TODO: fetch this value from the native side
   final int kMaximumSupportedFloatingPreview = 3;
@@ -164,6 +164,7 @@ class AwesomeCameraPreviewState extends State<AwesomeCameraPreview> {
                   alignment: widget.alignment,
                   previewFit: widget.previewFit,
                   previewSize: _previewSize!,
+                  previewPadding: widget.padding,
                   constraints: constraints,
                   sensor: widget.state.sensorConfig.sensors.first,
                   onPreviewCalculated: (preview) {
